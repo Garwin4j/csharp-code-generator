@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GeneratedFile } from '../types';
+import * as firestoreService from './firestoreService';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
 
@@ -64,9 +65,9 @@ const streamAndParseResponse = async (
 
 
 export async function generateCode(
+  packageId: string,
   requirements: string,
-  onProgress: (progress: string) => void
-): Promise<GeneratedFile[]> {
+): Promise<void> {
   const prompt = `
     You are an expert C# .NET architect specializing in Clean Architecture.
     Generate a complete C# codebase for a .NET 10.0 solution based on the following requirements.
@@ -92,7 +93,41 @@ export async function generateCode(
     ---
   `;
 
-  return streamAndParseResponse(prompt, onProgress);
+  try {
+    const responseStream = await ai.models.generateContentStream({
+        model: "gemini-2.5-flash",
+        contents: prompt,
+        config: {
+            responseMimeType: "application/json",
+            responseSchema: JSON_RESPONSE_SCHEMA,
+        },
+    });
+
+    let fullJsonResponse = '';
+    for await (const chunk of responseStream) {
+        const chunkText = chunk.text;
+        if (chunkText) {
+            fullJsonResponse += chunkText;
+            // Update firestore with progress
+            await firestoreService.updatePackageGenerationProgress(packageId, fullJsonResponse);
+        }
+    }
+    
+    const generatedFiles = parseJsonResponse(fullJsonResponse);
+    // Finalize generation in firestore
+    await firestoreService.finalizePackageGeneration(packageId, generatedFiles);
+
+  } catch (error) {
+    console.error("Error generating code with Gemini:", error);
+    let errorMessage = "Failed to generate code. The model may have returned an unexpected format.";
+    if (error instanceof SyntaxError) {
+        errorMessage = "Failed to parse the model's response. The generated JSON was malformed.";
+    } else if (error instanceof Error) {
+        errorMessage = error.message;
+    }
+    // Mark generation as failed in firestore
+    await firestoreService.failPackageGeneration(packageId, errorMessage);
+  }
 }
 
 
@@ -103,7 +138,6 @@ export async function refineCode(
 ): Promise<GeneratedFile[]> {
     const currentCodeJson = JSON.stringify(currentCode, null, 2);
 
-    // FIX: Removed unnecessary backslashes from the template literal. The backslashes were causing a syntax error by escaping the backticks and template variable placeholders.
     const prompt = `
     You are an expert C# .NET architect specializing in Clean Architecture.
     A C# codebase has already been generated, and is provided as a JSON array. The user now wants to make changes to it.

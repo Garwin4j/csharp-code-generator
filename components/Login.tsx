@@ -14,7 +14,10 @@ const Login: React.FC = () => {
         } catch (err) {
             console.error("Authentication failed:", err);
             if (err instanceof FirebaseError) {
-                if (err.code === 'auth/configuration-not-found') {
+                if (err.code === 'auth/unauthorized-domain') {
+                    const hostname = window.location.hostname;
+                    setError(`This app's domain ('${hostname}') is not authorized for authentication. Please go to your Firebase Console -> Authentication -> Settings -> Authorized domains, and add this domain to the list.`);
+                } else if (err.code === 'auth/configuration-not-found') {
                     const hostname = window.location.hostname;
                     setError(`Configuration Not Found. This app is running on '${hostname}'. You MUST add this exact domain to the "Authorized domains" list in your Firebase Authentication settings. Also, ensure the Google Sign-in provider is enabled.`);
                 } else if (err.code === 'auth/api-key-not-valid') {

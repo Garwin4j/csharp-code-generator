@@ -39,22 +39,22 @@ const App: React.FC = () => {
         setAppState('package_selection');
       } else {
         setAppState('login');
+        setPackages([]);
       }
     });
     return () => unsubscribe();
   }, []);
 
   useEffect(() => {
-    if (appState === 'package_selection' && user) {
-      const fetchPackages = async () => {
-        setIsLoading(true);
-        const userPackages = await firestoreService.getUserPackages(user.uid);
+    if (user) {
+      setIsLoading(true);
+      const unsubscribe = firestoreService.onUserPackagesSnapshot(user.uid, (userPackages) => {
         setPackages(userPackages);
         setIsLoading(false);
-      };
-      fetchPackages();
+      });
+      return () => unsubscribe();
     }
-  }, [appState, user]);
+  }, [user]);
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -66,7 +66,7 @@ const App: React.FC = () => {
 
   const handleSelectPackage = async (packageId: string) => {
     const pkg = packages.find(p => p.id === packageId);
-    if (pkg) {
+    if (pkg && pkg.files) {
       setIsLoading(true);
       setSelectedPackage(pkg);
       setGeneratedCode(pkg.files);
@@ -96,21 +96,16 @@ const App: React.FC = () => {
     if (!requirements.trim() || !user) return;
     setIsLoading(true);
     setError(null);
-    setGeneratedCode(null);
-    setThinkingProgress('');
-    setIsThinkingPanelOpen(true);
-
+  
     try {
-      const files = await generateCode(requirements, setThinkingProgress);
-      const newPackage = await firestoreService.createPackage(user.uid, requirements, files);
-      setGeneratedCode(files);
-      setSelectedPackage(newPackage);
-      setAppState('chat');
-      const initialMessage: ChatMessage = { role: 'model', content: "I've generated the initial codebase. You can now review the files. How would you like to refine it?" };
-      await firestoreService.addChatMessage(newPackage.id, initialMessage);
-      setChatHistory([initialMessage]);
+      const newPackage = await firestoreService.createPackageForGeneration(user.uid, requirements);
+      setAppState('package_selection');
+  
+      // Fire-and-forget background generation
+      generateCode(newPackage.id, requirements);
+  
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+      setError(err instanceof Error ? err.message : 'An unknown error occurred while starting generation.');
       setAppState('generating');
     } finally {
       setIsLoading(false);
@@ -180,7 +175,7 @@ const App: React.FC = () => {
                  />
               )}
     
-              {isLoading && (
+              {isLoading && appState === 'chat' && (
                 <ThinkingProgress
                   progress={thinkingProgress}
                   isOpen={isThinkingPanelOpen}

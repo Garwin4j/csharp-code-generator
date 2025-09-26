@@ -14,7 +14,10 @@ export interface Package {
     userId: string;
     name: string;
     initialRequirements: string;
-    files: GeneratedFile[];
+    files: GeneratedFile[] | null; // Can be null during generation
     createdAt: Date;
     updatedAt: Date;
+    status: 'generating' | 'completed' | 'failed';
+    generationLog?: string; // To store progress stream
+    error?: string; // To store error message if generation fails
 }

@@ -9,6 +9,8 @@ import {
   serverTimestamp,
   orderBy,
   Timestamp,
+  onSnapshot,
+  Unsubscribe,
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { GeneratedFile, Package, ChatMessage } from '../types';
@@ -21,34 +23,72 @@ const getChatHistoryCollection = (packageId: string) => collection(db, `packages
 const convertPackageTimestamps = (docData: any): Omit<Package, 'id'> => {
     return {
         ...docData,
+        files: docData.files || null,
         createdAt: (docData.createdAt as Timestamp)?.toDate(),
         updatedAt: (docData.updatedAt as Timestamp)?.toDate(),
     } as Omit<Package, 'id'>;
 }
 
-export const createPackage = async (
+export const createPackageForGeneration = async (
   userId: string,
   initialRequirements: string,
-  files: GeneratedFile[]
 ): Promise<Package> => {
-  const docRef = await addDoc(packagesCollection, {
+  const newPackageData = {
     userId,
-    name: `New Project - ${new Date().toLocaleDateString()}`, // Simple default name
+    name: `New Project - ${new Date().toLocaleDateString()}`,
     initialRequirements,
-    files,
+    files: null,
+    status: 'generating' as const,
+    generationLog: 'Initializing...',
+    error: '',
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-  });
+  };
+  const docRef = await addDoc(packagesCollection, newPackageData);
   return { 
       id: docRef.id, 
-      userId,
-      initialRequirements,
-      files,
-      name: `New Project - ${new Date().toLocaleDateString()}`,
+      ...newPackageData,
       createdAt: new Date(),
       updatedAt: new Date(),
   };
 };
+
+export const updatePackageGenerationProgress = async (
+  packageId: string,
+  progressLog: string
+): Promise<void> => {
+  const packageDoc = doc(db, 'packages', packageId);
+  await updateDoc(packageDoc, {
+    generationLog: progressLog,
+    updatedAt: serverTimestamp(),
+  });
+};
+
+export const finalizePackageGeneration = async (
+  packageId: string,
+  files: GeneratedFile[]
+): Promise<void> => {
+  const packageDoc = doc(db, 'packages', packageId);
+  await updateDoc(packageDoc, {
+    files,
+    status: 'completed',
+    generationLog: 'Generation complete.',
+    updatedAt: serverTimestamp(),
+  });
+};
+
+export const failPackageGeneration = async (
+  packageId: string,
+  errorMessage: string
+): Promise<void> => {
+  const packageDoc = doc(db, 'packages', packageId);
+  await updateDoc(packageDoc, {
+    status: 'failed',
+    error: errorMessage,
+    updatedAt: serverTimestamp(),
+  });
+};
+
 
 export const updatePackage = async (
   packageId: string,
@@ -61,13 +101,24 @@ export const updatePackage = async (
   });
 };
 
-export const getUserPackages = async (userId: string): Promise<Package[]> => {
-  const q = query(packagesCollection, where('userId', '==', userId), orderBy('updatedAt', 'desc'));
-  const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map((doc) => ({
-    id: doc.id,
-    ...convertPackageTimestamps(doc.data()),
-  } as Package));
+export const onUserPackagesSnapshot = (
+    userId: string,
+    callback: (packages: Package[]) => void
+): Unsubscribe => {
+    const q = query(packagesCollection, where('userId', '==', userId), orderBy('updatedAt', 'desc'));
+
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+        const packages = querySnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...convertPackageTimestamps(doc.data()),
+        } as Package));
+        callback(packages);
+    }, (error) => {
+        console.error("Error listening to package updates:", error);
+        callback([]);
+    });
+
+    return unsubscribe;
 };
 
 export const addChatMessage = async (
