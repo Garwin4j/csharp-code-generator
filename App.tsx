@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
 import { auth } from './firebaseConfig';
-import { GeneratedFile, ChatMessage, Package } from './types';
+import { GeneratedFile, ChatMessage, Package, FilePatch } from './types';
 import { generateCode, refineCode } from './services/geminiService';
 import * as firestoreService from './services/firestoreService';
 import { INITIAL_REQUIREMENTS } from './constants';
@@ -15,6 +15,46 @@ import Login from './components/Login';
 import PackageSelector from './components/PackageSelector';
 
 type AppState = 'loading' | 'login' | 'package_selection' | 'generating' | 'chat';
+
+const applyCodePatch = (currentCode: GeneratedFile[], patch: FilePatch[]): GeneratedFile[] => {
+  let newCode = [...currentCode];
+
+  patch.forEach(operation => {
+    const fileIndex = newCode.findIndex(f => f.path === operation.path);
+    const fileExists = fileIndex !== -1;
+
+    switch (operation.op) {
+      case 'add':
+        if (fileExists) {
+          // If file exists, treat add as an update
+          newCode[fileIndex].content = operation.content;
+        } else {
+          // Otherwise, add the new file
+          newCode.push({ path: operation.path, content: operation.content });
+        }
+        break;
+      case 'update':
+        if (fileExists) {
+          // If file exists, update it
+          newCode[fileIndex].content = operation.content;
+        } else {
+          // If not, treat update as an add
+          newCode.push({ path: operation.path, content: operation.content });
+        }
+        break;
+      case 'delete':
+        if (fileExists) {
+          // Remove the file if it exists
+          newCode.splice(fileIndex, 1);
+        }
+        // If it doesn't exist, do nothing
+        break;
+    }
+  });
+
+  return newCode;
+};
+
 
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>('loading');
@@ -126,7 +166,9 @@ const App: React.FC = () => {
     setIsThinkingPanelOpen(true);
 
     try {
-      const updatedCode = await refineCode(message, generatedCode, setThinkingProgress);
+      const patch = await refineCode(message, generatedCode, setThinkingProgress);
+      const updatedCode = applyCodePatch(generatedCode, patch);
+
       await firestoreService.updatePackage(selectedPackage.id, updatedCode);
       
       setGeneratedCode(updatedCode);

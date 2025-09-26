@@ -21,3 +21,8 @@ export interface Package {
     generationLog?: string; // To store progress stream
     error?: string; // To store error message if generation fails
 }
+
+export type FilePatch =
+  | { op: 'add'; path: string; content: string }
+  | { op: 'update'; path: string; content: string }
+  | { op: 'delete'; path: string };
