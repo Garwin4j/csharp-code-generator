@@ -1,0 +1,5 @@
+{
+  "name": "C# Clean Architecture Code Generator",
+  "description": "An AI-powered tool that generates a complete C# .NET codebase following the Clean Architecture pattern based on detailed specifications. Simply provide your requirements and let the AI build the foundational structure for your project.",
+  "requestFramePermissions": []
+}

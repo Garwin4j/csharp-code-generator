@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>C# Clean Architecture Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.20.0",
+    "react/": "https://aistudiocdn.com/react@^19.1.1/",
+    "react": "https://aistudiocdn.com/react@^19.1.1",
+    "jszip": "https://esm.run/jszip",
+    "react-markdown": "https://esm.run/react-markdown",
+    "remark-gfm": "https://esm.run/remark-gfm",
+    "firebase/app": "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js",
+    "firebase/auth": "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js",
+    "firebase/firestore": "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js",
+    "firebase/": "https://aistudiocdn.com/firebase@^12.3.0/"
+  }
+}
+</script>
+<style>
+.prose-styles h1, .prose-styles h2, .prose-styles h3, .prose-styles h4, .prose-styles h5, .prose-styles h6 {
+    color: #e5e7eb; /* gray-200 */
+    border-bottom: 1px solid #4b5563; /* gray-600 */
+    padding-bottom: 0.3em;
+    margin-top: 1.5em;
+    margin-bottom: 1em;
+}
+.prose-styles h1 { font-size: 1.875rem; }
+.prose-styles h2 { font-size: 1.5rem; }
+.prose-styles h3 { font-size: 1.25rem; }
+.prose-styles p {
+    margin-bottom: 1.25em;
+    line-height: 1.75;
+}
+.prose-styles ul, .prose-styles ol {
+    padding-left: 1.75em;
+    margin-bottom: 1.25em;
+}
+.prose-styles li {
+    margin-bottom: 0.5em;
+}
+.prose-styles li > p {
+    margin-bottom: 0.5em;
+}
+.prose-styles code {
+    background-color: #374151; /* gray-700 */
+    padding: 0.2em 0.4em;
+    margin: 0;
+    font-size: 85%;
+    border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    color: #d1d5db; /* gray-300 */
+}
+.prose-styles pre {
+    background-color: #111827; /* gray-900 */
+    border: 1px solid #374151; /* gray-700 */
+    padding: 1em;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 0.9em;
+}
+.prose-styles pre code {
+    background-color: transparent;
+    padding: 0;
+    border: none;
+}
+.prose-styles a {
+    color: #60a5fa; /* blue-400 */
+    text-decoration: underline;
+    font-weight: 500;
+}
+.prose-styles a:hover {
+    color: #93c5fd; /* blue-300 */
+}
+.prose-styles blockquote {
+    border-left: 4px solid #4b5563; /* gray-600 */
+    padding-left: 1em;
+    color: #9ca3af; /* gray-400 */
+    margin-left: 0;
+    margin-bottom: 1.25em;
+}
+.prose-styles table {
+    width: 100%;
+    margin-bottom: 1.25em;
+    border-collapse: collapse;
+}
+.prose-styles th, .prose-styles td {
+    border: 1px solid #4b5563; /* gray-600 */
+    padding: 0.5em 1em;
+}
+.prose-styles th {
+    background-color: #374151; /* gray-700 */
+    font-weight: 600;
+}
+</style>
+</head>
+  <body class="bg-gray-900 text-white">
+    <div id="root"></div>
+  </body>
+</html>
