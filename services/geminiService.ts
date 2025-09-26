@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { GeneratedFile, FilePatch } from '../types';
+import { GeneratedFile, FilePatch, ChatMessage } from '../types';
 import * as firestoreService from './firestoreService';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
@@ -46,11 +46,16 @@ const PATCH_RESPONSE_SCHEMA = {
 
 
 const parseJsonResponse = (jsonString: string): GeneratedFile[] => {
-    const generatedFiles = JSON.parse(jsonString);
-    if (!Array.isArray(generatedFiles) || generatedFiles.some(f => typeof f.path !== 'string' || typeof f.content !== 'string')) {
-        throw new Error("API returned an invalid data structure.");
+    try {
+        const generatedFiles = JSON.parse(jsonString);
+        if (!Array.isArray(generatedFiles) || generatedFiles.some(f => typeof f.path !== 'string' || typeof f.content !== 'string')) {
+            throw new Error("API returned an invalid data structure.");
+        }
+        return generatedFiles as GeneratedFile[];
+    } catch (e) {
+        console.error("Malformed JSON received:", jsonString);
+        throw new Error("Failed to parse the model's response. The generated JSON was malformed.");
     }
-    return generatedFiles as GeneratedFile[];
 };
 
 const parsePatchJsonResponse = (jsonString: string): FilePatch[] => {
@@ -97,6 +102,8 @@ export async function generateCode(
         config: {
             responseMimeType: "application/json",
             responseSchema: JSON_RESPONSE_SCHEMA,
+            // Low thinking budget to encourage faster streaming of initial files
+            thinkingConfig: { thinkingBudget: 100 }, 
         },
     });
 
@@ -105,24 +112,20 @@ export async function generateCode(
         const chunkText = chunk.text;
         if (chunkText) {
             fullJsonResponse += chunkText;
-            // Update firestore with progress
-            await firestoreService.updatePackageGenerationProgress(packageId, fullJsonResponse);
+            // Update firestore with progress. No need to await, can be fire-and-forget
+            firestoreService.updatePackageGenerationProgress(packageId, fullJsonResponse);
         }
     }
     
     const generatedFiles = parseJsonResponse(fullJsonResponse);
-    // Finalize generation in firestore
     await firestoreService.finalizePackageGeneration(packageId, generatedFiles);
 
   } catch (error) {
     console.error("Error generating code with Gemini:", error);
     let errorMessage = "Failed to generate code. The model may have returned an unexpected format.";
-    if (error instanceof SyntaxError) {
-        errorMessage = "Failed to parse the model's response. The generated JSON was malformed.";
-    } else if (error instanceof Error) {
+    if (error instanceof Error) {
         errorMessage = error.message;
     }
-    // Mark generation as failed in firestore
     await firestoreService.failPackageGeneration(packageId, errorMessage);
   }
 }
@@ -205,5 +208,47 @@ export async function refineCode(
             throw new Error("Failed to parse the model's patch response. The generated JSON was malformed.");
         }
         throw new Error("Failed to generate patch. The model may have returned an unexpected format. Please check the console for details.");
+    }
+}
+
+export async function consolidateRequirements(
+    initialRequirements: string,
+    chatHistory: ChatMessage[]
+): Promise<string> {
+    const userMessages = chatHistory
+        .filter(msg => msg.role === 'user')
+        .map((msg, index) => `Request ${index + 1}:\n${msg.content}`)
+        .join('\n\n---\n\n');
+
+    const prompt = `
+    You are an expert technical writer and software architect. Your task is to synthesize a project requirements document.
+
+    You will be given an initial set of requirements in Markdown format and a series of user change requests from a chat conversation.
+
+    Your goal is to produce a single, final, and coherent Markdown document that incorporates all the changes from the chat history into the initial requirements. The final document should be a complete set of instructions that, if given to an AI code generation model, would result in the project's current, evolved state.
+
+    - **Integrate Changes:** Don't just append the changes. Logically merge them into the relevant sections of the original document. If a user asks to "add a property," find the entity definition and add it there. If they ask to "change the database," find the data access section and update it.
+    - **Maintain Format:** Preserve the original Markdown formatting (headings, lists, code blocks).
+    - **Be Comprehensive:** The final document must be a complete, standalone set of requirements.
+    - **Output Only Markdown:** Your entire response MUST be ONLY the final Markdown document. Do not include any conversational text, introductions, or explanations like "Here is the consolidated document:".
+
+    ---
+    INITIAL REQUIREMENTS:
+    ${initialRequirements}
+    ---
+    CHAT HISTORY (User Requests):
+    ${userMessages}
+    ---
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+        });
+        return response.text;
+    } catch (error) {
+        console.error("Error consolidating requirements:", error);
+        throw new Error("Failed to generate the consolidated requirements document.");
     }
 }

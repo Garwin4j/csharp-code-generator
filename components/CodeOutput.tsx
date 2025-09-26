@@ -18,7 +18,14 @@ const CodeOutput: React.FC<CodeOutputProps> = ({ generatedCode, isLoading, error
       // Try to preserve the selected file if it still exists in the new code
       const previouslySelectedPath = selectedFile?.path;
       const fileStillExists = generatedCode.find(f => f.path === previouslySelectedPath);
-      setSelectedFile(fileStillExists || generatedCode[0]);
+      
+      // If the selected file no longer exists or none was selected, default to the first file.
+      if (!fileStillExists) {
+        setSelectedFile(generatedCode[0]);
+      } else if (!selectedFile) {
+        setSelectedFile(fileStillExists);
+      }
+
     } else {
       setSelectedFile(null);
     }
@@ -56,8 +63,8 @@ const CodeOutput: React.FC<CodeOutputProps> = ({ generatedCode, isLoading, error
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>
-          <p className="text-lg">Processing your request...</p>
-          <p className="text-sm">This may take a moment.</p>
+          <p className="text-lg font-semibold">AI is Generating Codebase</p>
+          <p className="text-sm">Files will appear here as they are created. This may take a few minutes.</p>
         </div>
       );
     }
@@ -94,7 +101,7 @@ const CodeOutput: React.FC<CodeOutputProps> = ({ generatedCode, isLoading, error
   };
 
   return (
-    <div className="flex flex-col bg-gray-800 rounded-lg shadow-lg overflow-hidden h-[85vh]">
+    <div className="flex flex-col bg-gray-800 rounded-lg shadow-lg overflow-hidden h-full">
        <div className="flex justify-between items-center p-4 border-b border-gray-700">
         <div>
           <h2 className="text-xl font-semibold text-white">2. Generated Code</h2>

@@ -4,7 +4,6 @@ import { Package } from '../types';
 interface PackageSelectorProps {
   packages: Package[];
   onSelect: (packageId: string) => void;
-  onNew: () => void;
   isLoading: boolean;
 }
 
@@ -97,19 +96,9 @@ const FailedPackageCard: React.FC<{ pkg: Package }> = ({ pkg }) => {
     );
 };
 
-const PackageSelector: React.FC<PackageSelectorProps> = ({ packages, onSelect, onNew, isLoading }) => {
+const PackageSelector: React.FC<PackageSelectorProps> = ({ packages, onSelect, isLoading }) => {
   return (
-    <div className="container mx-auto p-4 lg:p-8">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-3xl font-bold text-white">Your Projects</h2>
-        <button
-          onClick={onNew}
-          className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-md transition-colors"
-        >
-          + New Project
-        </button>
-      </div>
-
+    <>
       {isLoading && packages.length === 0 ? (
         <div className="text-center text-gray-400">Loading projects...</div>
       ) : packages.length === 0 ? (
@@ -149,7 +138,7 @@ const PackageSelector: React.FC<PackageSelectorProps> = ({ packages, onSelect, o
           })}
         </div>
       )}
-    </div>
+    </>
   );
 };
 

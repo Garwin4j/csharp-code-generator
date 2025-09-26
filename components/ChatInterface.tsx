@@ -2,16 +2,19 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ChatMessage } from '../types';
+import { consolidateRequirements } from '../services/geminiService';
 
 interface ChatInterfaceProps {
   chatHistory: ChatMessage[];
   onSendMessage: (message: string) => void;
   isLoading: boolean;
   onBack: () => void;
+  initialRequirements: string;
 }
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ chatHistory, onSendMessage, isLoading, onBack }) => {
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ chatHistory, onSendMessage, isLoading, onBack, initialRequirements }) => {
   const [message, setMessage] = useState('');
+  const [isConsolidating, setIsConsolidating] = useState(false);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -29,14 +32,58 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ chatHistory, onSendMessag
     }
   };
 
+  const handleDownloadPrompt = async () => {
+    setIsConsolidating(true);
+    try {
+        const consolidatedText = await consolidateRequirements(initialRequirements, chatHistory);
+        const blob = new Blob([consolidatedText], { type: 'text/markdown;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'Consolidated-Requirements.md';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+    } catch (error) {
+        console.error("Failed to download consolidated prompt:", error);
+        // You might want to show an error to the user here
+    } finally {
+        setIsConsolidating(false);
+    }
+  };
+
   return (
-    <div className="flex flex-col bg-gray-800 rounded-lg shadow-lg overflow-hidden h-[85vh]">
-      <div className="p-4 border-b border-gray-700 flex justify-between items-center">
+    <div className="flex flex-col bg-gray-800 rounded-lg shadow-lg overflow-hidden h-full">
+      <div className="p-4 border-b border-gray-700 flex justify-between items-center flex-wrap gap-2">
         <div>
             <h2 className="text-xl font-semibold text-white">Refine Your Project</h2>
             <p className="text-sm text-gray-400">Chat with the AI to make changes to the generated code.</p>
         </div>
-        <button onClick={onBack} className="text-sm bg-gray-700 hover:bg-gray-600 text-gray-300 font-semibold py-2 px-4 rounded-md transition-colors">&larr; Back to Projects</button>
+        <div className="flex items-center gap-2">
+            <button
+              onClick={handleDownloadPrompt}
+              disabled={isConsolidating || isLoading}
+              className="text-sm bg-gray-700 hover:bg-gray-600 text-gray-300 font-semibold py-2 px-4 rounded-md transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isConsolidating ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span>Building...</span>
+                </>
+              ) : (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                  <span>Download Prompt</span>
+                </>
+              )}
+            </button>
+            <button onClick={onBack} className="text-sm bg-gray-700 hover:bg-gray-600 text-gray-300 font-semibold py-2 px-4 rounded-md transition-colors">&larr; Back to Home</button>
+        </div>
       </div>
 
       <div ref={chatContainerRef} className="flex-grow p-4 overflow-y-auto space-y-4">

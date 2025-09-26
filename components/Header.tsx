@@ -4,11 +4,15 @@ import { User as FirebaseUser } from 'firebase/auth';
 interface HeaderProps {
     user: FirebaseUser | null;
     onLogout: () => void;
+    onLogin: () => void;
+    onShowKey: () => void;
+    isGuest: boolean;
+    hasActiveProject: boolean;
 }
 
-const Header: React.FC<HeaderProps> = ({ user, onLogout }) => {
+const Header: React.FC<HeaderProps> = ({ user, onLogout, onLogin, onShowKey, isGuest, hasActiveProject }) => {
   return (
-    <header className="bg-gray-800 p-4 shadow-md flex justify-between items-center border-b border-gray-700">
+    <header className="bg-gray-800 p-4 shadow-md flex justify-between items-center border-b border-gray-700 z-10">
       <div className="text-left">
           <h1 className="text-xl lg:text-2xl font-bold text-cyan-400">
             C# Clean Architecture Code Generator
@@ -17,9 +21,27 @@ const Header: React.FC<HeaderProps> = ({ user, onLogout }) => {
             Powered by Google Gemini
           </p>
       </div>
-      {user && (
-          <div className="flex items-center gap-4">
-              <div className="text-right">
+      <div className="flex items-center gap-4">
+        {isGuest ? (
+          <>
+            {hasActiveProject && (
+                 <button
+                    onClick={onShowKey}
+                    className="bg-cyan-600 hover:bg-cyan-700 text-white font-semibold py-2 px-4 rounded-md transition-colors text-sm"
+                  >
+                    Save/Share Key
+                  </button>
+            )}
+            <button
+              onClick={onLogin}
+              className="bg-gray-700 hover:bg-gray-600 text-gray-300 font-semibold py-2 px-4 rounded-md transition-colors text-sm"
+            >
+                Login
+            </button>
+          </>
+        ) : user && (
+          <>
+              <div className="text-right hidden sm:block">
                   <p className="font-semibold text-sm text-white">{user.displayName}</p>
                   <p className="text-xs text-gray-400">{user.email}</p>
               </div>
@@ -30,8 +52,9 @@ const Header: React.FC<HeaderProps> = ({ user, onLogout }) => {
               >
                   Logout
               </button>
-          </div>
-      )}
+          </>
+        )}
+       </div>
     </header>
   );
 };

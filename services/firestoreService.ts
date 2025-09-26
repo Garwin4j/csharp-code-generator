@@ -5,6 +5,7 @@ import {
   query,
   where,
   doc,
+  getDoc,
   updateDoc,
   serverTimestamp,
   orderBy,
@@ -30,11 +31,10 @@ const convertPackageTimestamps = (docData: any): Omit<Package, 'id'> => {
 }
 
 export const createPackageForGeneration = async (
-  userId: string,
   initialRequirements: string,
+  userId?: string,
 ): Promise<Package> => {
-  const newPackageData = {
-    userId,
+  const newPackageData: any = {
     name: `New Project - ${new Date().toLocaleDateString()}`,
     initialRequirements,
     files: null,
@@ -44,6 +44,11 @@ export const createPackageForGeneration = async (
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
+
+  if (userId) {
+    newPackageData.userId = userId;
+  }
+
   const docRef = await addDoc(packagesCollection, newPackageData);
   return { 
       id: docRef.id, 
@@ -89,6 +94,19 @@ export const failPackageGeneration = async (
   });
 };
 
+export const getPackage = async (packageId: string): Promise<Package | null> => {
+    const packageDocRef = doc(db, 'packages', packageId);
+    const docSnap = await getDoc(packageDocRef);
+
+    if (docSnap.exists()) {
+        return {
+            id: docSnap.id,
+            ...convertPackageTimestamps(docSnap.data()),
+        } as Package;
+    } else {
+        return null;
+    }
+};
 
 export const updatePackage = async (
   packageId: string,

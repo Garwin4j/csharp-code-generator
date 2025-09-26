@@ -11,7 +11,7 @@ export interface ChatMessage {
 
 export interface Package {
     id: string;
-    userId: string;
+    userId?: string; // User ID is optional for guest packages
     name: string;
     initialRequirements: string;
     files: GeneratedFile[] | null; // Can be null during generation
