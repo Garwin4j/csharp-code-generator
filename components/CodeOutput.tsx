@@ -101,7 +101,7 @@ const CodeOutput: React.FC<CodeOutputProps> = ({ generatedCode, isLoading, error
   };
 
   return (
-    <div className="flex flex-col bg-gray-800 rounded-lg shadow-lg overflow-hidden h-full">
+    <div className="flex flex-col bg-gray-800 overflow-hidden h-full">
        <div className="flex justify-between items-center p-4 border-b border-gray-700">
         <div>
           <h2 className="text-xl font-semibold text-white">2. Generated Code</h2>

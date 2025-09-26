@@ -16,6 +16,7 @@ import ShareKeyModal from './components/ShareKeyModal';
 import ResizablePanels from './components/ResizablePanels';
 
 type AppState = 'loading' | 'home' | 'generating' | 'chat';
+type MobileView = 'left' | 'right';
 
 const applyCodePatch = (currentCode: GeneratedFile[], patch: FilePatch[]): GeneratedFile[] => {
   let newCode = [...currentCode];
@@ -68,6 +69,7 @@ const App: React.FC = () => {
 
   const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
   const [isLargeScreen, setIsLargeScreen] = useState(window.innerWidth >= 1024);
+  const [mobileView, setMobileView] = useState<MobileView>('left');
 
   useEffect(() => {
     const handleResize = () => setIsLargeScreen(window.innerWidth >= 1024);
@@ -272,21 +274,40 @@ const App: React.FC = () => {
         );
 
         return (
-          <main className="flex-grow p-4 lg:p-6 overflow-hidden">
-            <div className="h-full w-full">
-              {isLargeScreen ? (
-                <ResizablePanels left={leftPanelContent} right={rightPanelContent} />
-              ) : (
-                <div className="flex flex-col gap-4">
-                  <div className="h-[80vh]">
-                    {leftPanelContent}
-                  </div>
-                  <div className="h-[80vh]">
-                    {rightPanelContent}
-                  </div>
+          <main className="flex-grow flex flex-col overflow-hidden">
+            {isLargeScreen ? (
+              <ResizablePanels left={leftPanelContent} right={rightPanelContent} />
+            ) : (
+              <div className="flex flex-col h-full">
+                <div className="flex border-b border-gray-700 flex-shrink-0">
+                  <button
+                    onClick={() => setMobileView('left')}
+                    className={`flex-1 py-3 px-4 text-center text-sm font-semibold transition-colors focus:outline-none ${
+                      mobileView === 'left'
+                        ? 'bg-gray-800 text-cyan-400 border-b-2 border-cyan-400'
+                        : 'text-gray-400 hover:bg-gray-700'
+                    }`}
+                    aria-pressed={mobileView === 'left'}
+                  >
+                    {appState === 'generating' ? 'Requirements' : 'Chat'}
+                  </button>
+                  <button
+                    onClick={() => setMobileView('right')}
+                    className={`flex-1 py-3 px-4 text-center text-sm font-semibold transition-colors focus:outline-none ${
+                      mobileView === 'right'
+                        ? 'bg-gray-800 text-cyan-400 border-b-2 border-cyan-400'
+                        : 'text-gray-400 hover:bg-gray-700'
+                    }`}
+                    aria-pressed={mobileView === 'right'}
+                  >
+                    Code
+                  </button>
                 </div>
-              )}
-            </div>
+                <div className="flex-grow overflow-y-auto bg-gray-900">
+                  {mobileView === 'left' ? leftPanelContent : rightPanelContent}
+                </div>
+              </div>
+            )}
           </main>
         );
       }
@@ -296,7 +317,7 @@ const App: React.FC = () => {
           <div className="flex items-center justify-center h-screen">
             <svg className="animate-spin h-10 w-10 text-cyan-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8_0_018-8V0C5.373_0_0_5.373_0_12h4zm2_5.291A7.962_7.962_0_014_12H0c0_3.042_1.135_5.824_3_7.938l3-2.647z"></path>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
           </div>
         )

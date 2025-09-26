@@ -53,7 +53,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ chatHistory, onSendMessag
   };
 
   return (
-    <div className="flex flex-col bg-gray-800 rounded-lg shadow-lg overflow-hidden h-full">
+    <div className="flex flex-col bg-gray-800 overflow-hidden flex-grow min-h-0">
       <div className="p-4 border-b border-gray-700 flex justify-between items-center flex-wrap gap-2">
         <div>
             <h2 className="text-xl font-semibold text-white">Refine Your Project</h2>
