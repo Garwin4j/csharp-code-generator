@@ -118,7 +118,7 @@ const CodeOutput: React.FC<CodeOutputProps> = ({ generatedCode, isLoading, error
           Download .zip
         </button>
       </div>
-      <div className="flex-grow overflow-hidden">
+      <div className="flex-grow overflow-hidden min-h-0">
         {renderContent()}
       </div>
     </div>
