@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GeneratedFile } from '../types';
 import FileTree from './FileTree';
 import CodeViewer from './CodeViewer';
@@ -10,33 +10,82 @@ interface CodeOutputProps {
   error: string | null;
   changedFilePaths: Set<string>;
   onSaveFile: (path: string, newContent: string) => Promise<void>;
+  fileDiffs: Map<string, Set<number>>;
 }
 
-const CodeOutput: React.FC<CodeOutputProps> = ({ generatedCode, isLoading, error, changedFilePaths, onSaveFile }) => {
+const CollapseIcon = ({ isCollapsed }: { isCollapsed: boolean }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        {isCollapsed ? (
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h7" />
+        ) : (
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+        )}
+    </svg>
+);
+
+
+const CodeOutput: React.FC<CodeOutputProps> = ({ generatedCode, isLoading, error, changedFilePaths, onSaveFile, fileDiffs }) => {
   const [selectedFile, setSelectedFile] = useState<GeneratedFile | null>(null);
+  const [isFileTreeCollapsed, setIsFileTreeCollapsed] = useState(false);
+  const [fileTreeWidth, setFileTreeWidth] = useState(300);
+  
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isResizingRef = useRef(false);
 
   useEffect(() => {
     if (generatedCode && generatedCode.length > 0) {
-      // Try to preserve the selected file if it still exists in the new code
       const previouslySelectedPath = selectedFile?.path;
       const fileStillExists = generatedCode.find(f => f.path === previouslySelectedPath);
       
-      // If the selected file no longer exists or none was selected, default to the first file.
-      if (!fileStillExists) {
+      if (!fileStillExists || !selectedFile) {
         setSelectedFile(generatedCode[0]);
-      } else if (!selectedFile) {
-        setSelectedFile(fileStillExists);
       }
-
     } else {
       setSelectedFile(null);
     }
   }, [generatedCode]);
 
+  const mouseMoveHandler = useCallback((e: MouseEvent) => {
+    if (!isResizingRef.current || !containerRef.current) return;
+    
+    const containerRect = containerRef.current.getBoundingClientRect();
+    let newWidth = e.clientX - containerRect.left;
+
+    const minWidth = 200;
+    const maxWidth = containerRect.width * 0.6; // Max 60% of container
+
+    if (newWidth < minWidth) newWidth = minWidth;
+    if (newWidth > maxWidth) newWidth = maxWidth;
+    
+    setFileTreeWidth(newWidth);
+  }, []);
+
+  const mouseUpHandler = useCallback(() => {
+    isResizingRef.current = false;
+    window.removeEventListener('mousemove', mouseMoveHandler);
+    window.removeEventListener('mouseup', mouseUpHandler);
+    document.body.style.cursor = 'default';
+    document.body.style.userSelect = 'auto';
+  }, [mouseMoveHandler]);
+
+  const mouseDownHandler = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizingRef.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', mouseMoveHandler);
+    window.addEventListener('mouseup', mouseUpHandler);
+  }, [mouseMoveHandler, mouseUpHandler]);
+
+  useEffect(() => {
+    return () => {
+      window.removeEventListener('mousemove', mouseMoveHandler);
+      window.removeEventListener('mouseup', mouseUpHandler);
+    };
+  }, [mouseMoveHandler, mouseUpHandler]);
+
   const handleDownloadZip = async () => {
-    if (!generatedCode || generatedCode.length === 0) {
-      return;
-    }
+    if (!generatedCode || generatedCode.length === 0) return;
 
     const zip = new JSZip();
     generatedCode.forEach(file => {
@@ -91,14 +140,34 @@ const CodeOutput: React.FC<CodeOutputProps> = ({ generatedCode, isLoading, error
     }
 
     return (
-      <div className="flex h-full">
-        <FileTree
-          files={generatedCode}
-          selectedFile={selectedFile}
-          onSelectFile={setSelectedFile}
-          changedFilePaths={changedFilePaths}
-        />
-        <CodeViewer file={selectedFile} onSave={onSaveFile} />
+      <div ref={containerRef} className="flex h-full">
+        {!isFileTreeCollapsed && (
+            <>
+                <div style={{ width: `${fileTreeWidth}px` }} className="h-full shrink-0">
+                    <FileTree
+                        files={generatedCode}
+                        selectedFile={selectedFile}
+                        onSelectFile={setSelectedFile}
+                        changedFilePaths={changedFilePaths}
+                    />
+                </div>
+                <div
+                    onMouseDown={mouseDownHandler}
+                    className="w-1.5 cursor-col-resize flex items-center justify-center bg-gray-800 hover:bg-gray-700 transition-colors group"
+                    role="separator"
+                    aria-orientation="vertical"
+                >
+                    <div className="w-0.5 h-8 bg-gray-700 rounded-full group-hover:bg-cyan-500 transition-colors"></div>
+                </div>
+            </>
+        )}
+        <div className="flex-grow min-w-0">
+          <CodeViewer 
+             file={selectedFile} 
+             onSave={onSaveFile}
+             diff={selectedFile ? fileDiffs.get(selectedFile.path) : undefined}
+          />
+        </div>
       </div>
     );
   };
@@ -106,9 +175,18 @@ const CodeOutput: React.FC<CodeOutputProps> = ({ generatedCode, isLoading, error
   return (
     <div className="flex flex-col bg-gray-800 overflow-hidden h-full">
        <div className="flex justify-between items-center p-4 border-b border-gray-700">
-        <div>
-          <h2 className="text-xl font-semibold text-white">2. Generated Code</h2>
-          <p className="text-sm text-gray-400">Browse, refine, and download your project files.</p>
+        <div className="flex items-center gap-3">
+            <button
+                onClick={() => setIsFileTreeCollapsed(!isFileTreeCollapsed)}
+                className="p-2 rounded-md hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
+                title={isFileTreeCollapsed ? "Show File Tree" : "Hide File Tree"}
+            >
+                <CollapseIcon isCollapsed={isFileTreeCollapsed} />
+            </button>
+            <div>
+              <h2 className="text-xl font-semibold text-white">2. Generated Code</h2>
+              <p className="text-sm text-gray-400">Browse, edit, and download your project files.</p>
+            </div>
         </div>
         <button
           onClick={handleDownloadZip}

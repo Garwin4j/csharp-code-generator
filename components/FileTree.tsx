@@ -1,4 +1,5 @@
 
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { GeneratedFile } from '../types';
 
@@ -235,7 +236,7 @@ const FileTree: React.FC<FileTreeProps> = ({ files, selectedFile, onSelectFile, 
     };
 
   return (
-    <div className="w-1/3 min-w-[250px] max-w-[400px] bg-gray-900 h-full overflow-y-auto border-r border-gray-700">
+    <div className="bg-gray-900 h-full overflow-y-auto border-r border-gray-700">
       <div className="p-2">
         {fileTree.children.map((node) => (
           <TreeNodeComponent

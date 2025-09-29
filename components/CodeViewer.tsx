@@ -5,16 +5,19 @@ import CodeEditor from './CodeEditor';
 interface CodeViewerProps {
   file: GeneratedFile | null;
   onSave: (path: string, newContent: string) => Promise<void>;
+  diff?: Set<number>;
 }
 
-const CodeViewer: React.FC<CodeViewerProps> = ({ file, onSave }) => {
+const CodeViewer: React.FC<CodeViewerProps> = ({ file, onSave, diff }) => {
   const [editedContent, setEditedContent] = useState('');
+  const [currentDiff, setCurrentDiff] = useState(diff);
   const [isSaving, setIsSaving] = useState(false);
   const [copySuccess, setCopySuccess] = useState('');
 
   useEffect(() => {
     setEditedContent(file?.content ?? '');
-  }, [file]);
+    setCurrentDiff(diff); // Reset diff when file or diff prop changes
+  }, [file, diff]);
 
   if (!file) {
     return (
@@ -25,6 +28,14 @@ const CodeViewer: React.FC<CodeViewerProps> = ({ file, onSave }) => {
   }
   
   const hasChanges = editedContent !== file.content;
+
+  const handleContentChange = (newContent: string) => {
+    setEditedContent(newContent);
+    // Clear diff highlighting on the first user edit for immediate feedback
+    if (currentDiff && currentDiff.size > 0) {
+        setCurrentDiff(undefined);
+    }
+  };
 
   const handleSave = async () => {
       if (!hasChanges || !file) return;
@@ -38,6 +49,7 @@ const CodeViewer: React.FC<CodeViewerProps> = ({ file, onSave }) => {
 
   const handleDiscard = () => {
     setEditedContent(file.content);
+    setCurrentDiff(diff); // Restore original diff if changes are discarded
   };
   
   const handleCopy = () => {
@@ -86,7 +98,11 @@ const CodeViewer: React.FC<CodeViewerProps> = ({ file, onSave }) => {
         </div>
       </div>
       <div className="flex-grow overflow-auto relative">
-        <CodeEditor value={editedContent} onChange={setEditedContent} />
+        <CodeEditor 
+            value={editedContent} 
+            onChange={handleContentChange} 
+            diff={currentDiff}
+        />
       </div>
     </div>
   );

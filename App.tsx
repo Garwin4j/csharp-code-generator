@@ -19,6 +19,67 @@ import ConfirmationModal from './components/ConfirmationModal';
 type AppState = 'loading' | 'home' | 'generating' | 'chat';
 type MobileView = 'left' | 'right';
 
+// --- Diffing Utilities ---
+
+/**
+ * Basic implementation of Longest Common Subsequence algorithm.
+ * @returns A 2D array with the lengths of LCS.
+ */
+const lcs = (a: string[], b: string[]) => {
+  const matrix = Array(a.length + 1).fill(null).map(() => Array(b.length + 1).fill(0));
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      if (a[i - 1] === b[j - 1]) {
+        matrix[i][j] = 1 + matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.max(matrix[i - 1][j], matrix[i][j - 1]);
+      }
+    }
+  }
+  return matrix;
+};
+
+/**
+ * Calculates the line numbers of added or changed lines in the new text.
+ * @param oldText The original string content.
+ * @param newText The updated string content.
+ * @returns A Set of line numbers (1-indexed) that are new or modified in newText.
+ */
+const calculateLineDiff = (oldText: string, newText: string): Set<number> => {
+  if (oldText === newText) return new Set();
+  const oldLines = oldText.split('\n');
+  const newLines = newText.split('\n');
+  const matrix = lcs(oldLines, newLines);
+  
+  const changedLines = new Set<number>();
+  let i = oldLines.length;
+  let j = newLines.length;
+
+  while (j > 0) {
+    if (i > 0 && oldLines[i - 1] === newLines[j - 1]) {
+      // Line is common, move diagonally up-left
+      i--;
+      j--;
+    } else {
+      // This line in `newLines` is not common with the corresponding line in `oldLines`.
+      // Mark it as changed/added.
+      changedLines.add(j); // j is the 1-indexed line number in newLines
+      
+      // Decide which way to move in the matrix: up or left.
+      // Move in the direction of the larger LCS value to stay on the optimal path.
+      if (i > 0 && (j === 0 || matrix[i-1][j] >= matrix[i][j-1])) {
+          // Corresponds to a deletion in oldLines. Move up.
+          i--;
+      } else {
+          // Corresponds to an addition in newLines. Move left.
+          j--;
+      }
+    }
+  }
+  return changedLines;
+};
+
+
 const applyCodePatch = (currentCode: GeneratedFile[], patch: FilePatch[]): GeneratedFile[] => {
   let newCode = [...currentCode];
 
@@ -80,6 +141,7 @@ const App: React.FC = () => {
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [checkpointToRevert, setCheckpointToRevert] = useState<Checkpoint | null>(null);
   const [changedFilePaths, setChangedFilePaths] = useState<Set<string>>(new Set());
+  const [fileDiffs, setFileDiffs] = useState<Map<string, Set<number>>>(new Map());
   
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -154,6 +216,7 @@ const App: React.FC = () => {
     setPackages([]);
     setCheckpoints([]);
     setChangedFilePaths(new Set());
+    setFileDiffs(new Map());
     setAppState('home');
   };
 
@@ -164,6 +227,7 @@ const App: React.FC = () => {
       setSelectedPackage(pkg);
       setGeneratedCode(pkg.files);
       setChangedFilePaths(new Set()); // Clear highlights on new selection
+      setFileDiffs(new Map());
       const history = await firestoreService.getPackageChatHistory(pkg.id);
       setChatHistory(history);
       const packageCheckpoints = await firestoreService.getCheckpoints(pkg.id);
@@ -181,6 +245,7 @@ const App: React.FC = () => {
         setSelectedPackage(pkg);
         setGeneratedCode(pkg.files);
         setChangedFilePaths(new Set());
+        setFileDiffs(new Map());
         const history = await firestoreService.getPackageChatHistory(pkg.id);
         setChatHistory(history);
         const packageCheckpoints = await firestoreService.getCheckpoints(pkg.id);
@@ -198,6 +263,7 @@ const App: React.FC = () => {
     setChatHistory([]);
     setCheckpoints([]);
     setChangedFilePaths(new Set());
+    setFileDiffs(new Map());
     setRequirements(INITIAL_REQUIREMENTS);
     setAppState('generating');
   };
@@ -208,6 +274,7 @@ const App: React.FC = () => {
     setChatHistory([]);
     setCheckpoints([]);
     setChangedFilePaths(new Set());
+    setFileDiffs(new Map());
     setAppState('home');
   };
 
@@ -216,6 +283,7 @@ const App: React.FC = () => {
     setIsLoading(true);
     setError(null);
     setChangedFilePaths(new Set());
+    setFileDiffs(new Map());
   
     try {
       // Create package first, works for guests (user?.uid is undefined) and logged-in users
@@ -241,17 +309,32 @@ const App: React.FC = () => {
   const handleConfirmRevert = async () => {
       if (!checkpointToRevert || !selectedPackage) return;
       
-      const currentCode = selectedPackage.files || [];
-      const changedPaths = findChangedFiles(currentCode, checkpointToRevert.files);
+      const oldCode = selectedPackage.files || [];
+      const newCode = checkpointToRevert.files;
+      const changedPaths = findChangedFiles(oldCode, newCode);
       setChangedFilePaths(changedPaths);
 
       setIsLoading(true);
       setError(null);
       
       try {
-          await firestoreService.updatePackage(selectedPackage.id, checkpointToRevert.files);
-          setGeneratedCode(checkpointToRevert.files);
-          setSelectedPackage(prev => prev ? { ...prev, files: checkpointToRevert.files, updatedAt: new Date() } : null);
+          const newDiffs = new Map<string, Set<number>>();
+          const oldFileMap = new Map(oldCode.map(f => [f.path, f.content]));
+
+          newCode.forEach(newFile => {
+              const oldContent = oldFileMap.get(newFile.path) ?? '';
+              if (newFile.content !== oldContent) {
+                  const diff = calculateLineDiff(oldContent, newFile.content);
+                  if (diff.size > 0) {
+                      newDiffs.set(newFile.path, diff);
+                  }
+              }
+          });
+          setFileDiffs(newDiffs);
+
+          await firestoreService.updatePackage(selectedPackage.id, newCode);
+          setGeneratedCode(newCode);
+          setSelectedPackage(prev => prev ? { ...prev, files: newCode, updatedAt: new Date() } : null);
 
           const revertMessage: ChatMessage = { role: 'model', content: `Successfully reverted to the version from "${checkpointToRevert.message}".` };
           await firestoreService.addChatMessage(selectedPackage.id, revertMessage);
@@ -280,15 +363,32 @@ const App: React.FC = () => {
     setError(null);
     setThinkingProgress('');
     setIsThinkingPanelOpen(true);
+    setFileDiffs(new Map()); // Clear previous diffs
 
     try {
       await firestoreService.createCheckpoint(selectedPackage.id, message, generatedCode);
       const updatedCheckpoints = await firestoreService.getCheckpoints(selectedPackage.id);
       setCheckpoints(updatedCheckpoints);
       
+      const oldCode = [...generatedCode]; // Capture old state for diffing
       const patch = await refineCode(message, generatedCode, setThinkingProgress);
       const updatedCode = applyCodePatch(generatedCode, patch);
 
+      // Calculate diffs for changed files
+      const newDiffs = new Map<string, Set<number>>();
+      patch.forEach(p => {
+          if (p.op === 'add' || p.op === 'update') {
+              const oldFile = oldCode.find(f => f.path === p.path);
+              const oldContent = oldFile ? oldFile.content : '';
+              const newContent = p.content;
+              const diff = calculateLineDiff(oldContent, newContent);
+              if (diff.size > 0) {
+                  newDiffs.set(p.path, diff);
+              }
+          }
+      });
+      setFileDiffs(newDiffs);
+      
       await firestoreService.updatePackage(selectedPackage.id, updatedCode);
       
       setGeneratedCode(updatedCode);
@@ -323,6 +423,15 @@ const App: React.FC = () => {
     setGeneratedCode(updatedCode);
     setSelectedPackage(prev => prev ? { ...prev, files: updatedCode, updatedAt: new Date() } : null);
     setChangedFilePaths(prev => new Set(prev).add(path));
+    // A user edit clears the AI-generated diff highlighting for that file
+    setFileDiffs(prev => {
+        const newDiffs = new Map(prev);
+        if (newDiffs.has(path)) {
+            newDiffs.delete(path);
+            return newDiffs;
+        }
+        return prev;
+    });
 
     try {
         await firestoreService.updatePackage(selectedPackage.id, updatedCode);
@@ -383,6 +492,7 @@ const App: React.FC = () => {
             error={error || selectedPackage?.error || null}
             changedFilePaths={changedFilePaths}
             onSaveFile={handleSaveFile}
+            fileDiffs={fileDiffs}
           />
         );
 

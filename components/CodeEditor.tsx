@@ -1,21 +1,25 @@
-import React, { useRef } from 'react';
+import React, { useRef, useMemo } from 'react';
 
 interface CodeEditorProps {
   value: string;
   onChange: (value: string) => void;
   language?: string;
+  diff?: Set<number>; // 1-indexed line numbers
 }
 
-const CodeEditor: React.FC<CodeEditorProps> = ({ value, onChange }) => {
+const CodeEditor: React.FC<CodeEditorProps> = ({ value, onChange, diff }) => {
   const lineNumbersRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const highlighterRef = useRef<HTMLDivElement>(null);
 
-  const lineCount = value.split('\n').length;
-  const lines = Array.from({ length: lineCount }, (_, i) => i + 1);
+  const lines = useMemo(() => value.split('\n'), [value]);
+  const lineCount = lines.length;
 
   const handleScroll = () => {
-    if (lineNumbersRef.current && textareaRef.current) {
-      lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
+    if (lineNumbersRef.current && textareaRef.current && highlighterRef.current) {
+      const scrollTop = textareaRef.current.scrollTop;
+      lineNumbersRef.current.scrollTop = scrollTop;
+      highlighterRef.current.scrollTop = scrollTop;
     }
   };
   
@@ -42,23 +46,40 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ value, onChange }) => {
     <div className="flex-grow flex h-full font-mono text-sm bg-gray-900">
       <div 
         ref={lineNumbersRef}
-        className="w-12 text-right text-gray-500 bg-gray-800 p-4 pt-[1rem] leading-6 select-none overflow-hidden"
+        className="w-12 text-right text-gray-500 bg-gray-800 p-4 pt-[1rem] leading-6 select-none shrink-0"
         aria-hidden="true"
       >
-        {lines.map(line => (
-          <div key={line}>{line}</div>
-        ))}
+        {/* We render a div with a fixed height to avoid reflow, and let the parent scroll it via scrollTop */}
+        <div className="relative">
+            {Array.from({ length: lineCount }, (_, i) => i + 1).map(lineNum => (
+                <div key={lineNum}>{lineNum}</div>
+            ))}
+        </div>
       </div>
-      <textarea
-        ref={textareaRef}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onScroll={handleScroll}
-        onKeyDown={handleKeyDown}
-        spellCheck="false"
-        className="flex-grow p-4 pt-[1rem] bg-transparent text-gray-300 w-full resize-none focus:outline-none leading-6"
-        wrap="off"
-      />
+      <div className="relative flex-grow">
+        <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onScroll={handleScroll}
+            onKeyDown={handleKeyDown}
+            spellCheck="false"
+            className="absolute inset-0 p-4 pt-[1rem] bg-transparent text-gray-300 w-full h-full resize-none focus:outline-none leading-6 z-10"
+            wrap="off"
+        />
+        <div
+            ref={highlighterRef}
+            className="absolute inset-0 p-4 pt-[1rem] leading-6 overflow-hidden pointer-events-none"
+            aria-hidden="true"
+        >
+            {lines.map((_, index) => {
+                const lineNumber = index + 1;
+                const isChanged = diff?.has(lineNumber);
+                // Using a non-breaking space to ensure the div has height.
+                return <div key={index} className={isChanged ? 'bg-green-900/40 rounded-sm -mx-2 px-2' : ''}>&nbsp;</div>;
+            })}
+        </div>
+      </div>
     </div>
   );
 };
