@@ -1,6 +1,3 @@
-// FIX: The namespace import `import * as firebaseApp from 'firebase/app'` is incorrect for the Firebase v9+ modular SDK.
-// It has been replaced with a named import `import { initializeApp } from 'firebase/app'`,
-// and the call to `firebaseApp.initializeApp` has been updated to `initializeApp`.
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';

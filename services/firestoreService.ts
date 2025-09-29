@@ -12,21 +12,36 @@ import {
   Timestamp,
   onSnapshot,
   Unsubscribe,
+  writeBatch,
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
-import { GeneratedFile, Package, ChatMessage } from '../types';
+import { GeneratedFile, Package, ChatMessage, Checkpoint } from '../types';
 
 // Firestore collection references
 const packagesCollection = collection(db, 'packages');
 const getChatHistoryCollection = (packageId: string) => collection(db, `packages/${packageId}/chatHistory`);
+const getCheckpointsCollection = (packageId: string) => collection(db, `packages/${packageId}/checkpoints`);
 
-// Helper to convert Firestore Timestamps to Dates
+
+// Helper to convert Firestore Timestamps and sanitize nested objects
 const convertPackageTimestamps = (docData: any): Omit<Package, 'id'> => {
+    // Sanitize the 'files' array to ensure they are plain objects,
+    // preventing circular reference errors with JSON.stringify.
+    const files = docData.files ? docData.files.map((file: GeneratedFile) => ({
+        path: file.path,
+        content: file.content
+    })) : null;
+
     return {
-        ...docData,
-        files: docData.files || null,
+        userId: docData.userId,
+        name: docData.name,
+        initialRequirements: docData.initialRequirements,
+        files: files,
         createdAt: (docData.createdAt as Timestamp)?.toDate(),
         updatedAt: (docData.updatedAt as Timestamp)?.toDate(),
+        status: docData.status,
+        generationLog: docData.generationLog,
+        error: docData.error,
     } as Omit<Package, 'id'>;
 }
 
@@ -73,14 +88,28 @@ export const finalizePackageGeneration = async (
   packageId: string,
   files: GeneratedFile[]
 ): Promise<void> => {
-  const packageDoc = doc(db, 'packages', packageId);
-  await updateDoc(packageDoc, {
-    files,
-    status: 'completed',
-    generationLog: 'Generation complete.',
-    updatedAt: serverTimestamp(),
-  });
+    const batch = writeBatch(db);
+
+    const packageDocRef = doc(db, 'packages', packageId);
+    batch.update(packageDocRef, {
+        files,
+        status: 'completed',
+        generationLog: 'Generation complete.',
+        updatedAt: serverTimestamp(),
+    });
+
+    // Create the initial checkpoint
+    const checkpointsCollectionRef = getCheckpointsCollection(packageId);
+    const checkpointDocRef = doc(checkpointsCollectionRef); // Auto-generate ID
+    batch.set(checkpointDocRef, {
+        message: 'Initial Version',
+        files: files,
+        createdAt: serverTimestamp(),
+    });
+
+    await batch.commit();
 };
+
 
 export const failPackageGeneration = async (
   packageId: string,
@@ -161,5 +190,40 @@ export const getPackageChatHistory = async (packageId: string): Promise<ChatMess
             content: data.content,
             timestamp: (data.timestamp as Timestamp)?.toDate(),
         } as ChatMessage;
+    });
+};
+
+export const createCheckpoint = async (
+    packageId: string,
+    message: string,
+    files: GeneratedFile[]
+): Promise<void> => {
+    const checkpointsCollection = getCheckpointsCollection(packageId);
+    await addDoc(checkpointsCollection, {
+        message,
+        files,
+        createdAt: serverTimestamp(),
+    });
+};
+
+export const getCheckpoints = async (packageId: string): Promise<Checkpoint[]> => {
+    const checkpointsCollection = getCheckpointsCollection(packageId);
+    const q = query(checkpointsCollection, orderBy('createdAt', 'desc'));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        // Sanitize the 'files' array to ensure they are plain objects,
+        // preventing circular reference errors when this data is used later.
+        const files = data.files ? data.files.map((file: GeneratedFile) => ({
+            path: file.path,
+            content: file.content
+        })) : [];
+
+        return {
+            id: doc.id,
+            message: data.message,
+            files: files,
+            createdAt: (data.createdAt as Timestamp).toDate(),
+        } as Checkpoint;
     });
 };

@@ -26,3 +26,10 @@ export type FilePatch =
   | { op: 'add'; path: string; content: string }
   | { op: 'update'; path: string; content: string }
   | { op: 'delete'; path: string };
+
+export interface Checkpoint {
+    id: string;
+    createdAt: Date;
+    message: string;
+    files: GeneratedFile[];
+}

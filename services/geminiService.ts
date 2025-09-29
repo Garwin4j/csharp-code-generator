@@ -136,7 +136,18 @@ export async function refineCode(
     currentCode: GeneratedFile[],
     onProgress: (progress: string) => void
 ): Promise<FilePatch[]> {
-    const currentCodeJson = JSON.stringify(currentCode, null, 2);
+    let currentCodeJson: string;
+    try {
+        // The `currentCode` object comes from the app's state. If it contains complex,
+        // non-serializable objects from Firestore, JSON.stringify will fail.
+        currentCodeJson = JSON.stringify(currentCode, null, 2);
+    } catch (error) {
+        if (error instanceof TypeError && error.message.includes('circular structure')) {
+            console.error("Circular structure detected in code files before sending to API:", currentCode);
+            throw new Error("A circular reference was detected in the project data, which prevents communication with the AI. This is usually a temporary issue with how data is loaded. Please try reloading the project.");
+        }
+        throw error; // Re-throw other errors
+    }
 
     const prompt = `
     You are an expert C# .NET architect specializing in Clean Architecture.

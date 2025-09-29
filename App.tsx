@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut, User as FirebaseUser, signInWithPopup } from 'firebase/auth';
 import { auth, googleProvider } from './firebaseConfig';
-import { GeneratedFile, ChatMessage, Package, FilePatch } from './types';
+import { GeneratedFile, ChatMessage, Package, FilePatch, Checkpoint } from './types';
 import { generateCode, refineCode } from './services/geminiService';
 import * as firestoreService from './services/firestoreService';
 import { INITIAL_REQUIREMENTS } from './constants';
@@ -14,6 +14,7 @@ import ChatInterface from './components/ChatInterface';
 import Home from './components/Home';
 import ShareKeyModal from './components/ShareKeyModal';
 import ResizablePanels from './components/ResizablePanels';
+import ConfirmationModal from './components/ConfirmationModal';
 
 type AppState = 'loading' | 'home' | 'generating' | 'chat';
 type MobileView = 'left' | 'right';
@@ -61,6 +62,8 @@ const App: React.FC = () => {
   const [requirements, setRequirements] = useState<string>(INITIAL_REQUIREMENTS);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [generatedCode, setGeneratedCode] = useState<GeneratedFile[] | null>(null);
+  const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
+  const [checkpointToRevert, setCheckpointToRevert] = useState<Checkpoint | null>(null);
   
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +73,24 @@ const App: React.FC = () => {
   const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
   const [isLargeScreen, setIsLargeScreen] = useState(window.innerWidth >= 1024);
   const [mobileView, setMobileView] = useState<MobileView>('left');
+
+  useEffect(() => {
+    // This effect syncs the `selectedPackage` state with real-time updates from the `packages` list.
+    // This is crucial for updating the view after a background generation completes, ensuring
+    // the app uses the latest, sanitized data from Firestore and preventing circular reference errors.
+    if (!selectedPackage?.id) return;
+
+    const updatedPackage = packages.find(p => p.id === selectedPackage.id);
+
+    // If an updated version is found in the main list (e.g., generation finished), sync the state.
+    // We use `updatedAt` to prevent infinite re-renders.
+    if (updatedPackage && updatedPackage.updatedAt > selectedPackage.updatedAt) {
+      setSelectedPackage(updatedPackage);
+      if (updatedPackage.files) {
+        setGeneratedCode(updatedPackage.files);
+      }
+    }
+  }, [packages, selectedPackage]);
 
   useEffect(() => {
     const handleResize = () => setIsLargeScreen(window.innerWidth >= 1024);
@@ -115,6 +136,7 @@ const App: React.FC = () => {
     setGeneratedCode(null);
     setChatHistory([]);
     setPackages([]);
+    setCheckpoints([]);
     setAppState('home');
   };
 
@@ -126,6 +148,8 @@ const App: React.FC = () => {
       setGeneratedCode(pkg.files);
       const history = await firestoreService.getPackageChatHistory(pkg.id);
       setChatHistory(history);
+      const packageCheckpoints = await firestoreService.getCheckpoints(pkg.id);
+      setCheckpoints(packageCheckpoints);
       setAppState('chat');
       setIsLoading(false);
     }
@@ -140,6 +164,8 @@ const App: React.FC = () => {
         setGeneratedCode(pkg.files);
         const history = await firestoreService.getPackageChatHistory(pkg.id);
         setChatHistory(history);
+        const packageCheckpoints = await firestoreService.getCheckpoints(pkg.id);
+        setCheckpoints(packageCheckpoints);
         setAppState('chat');
     } else {
         alert("Project key not found.");
@@ -151,6 +177,7 @@ const App: React.FC = () => {
     setSelectedPackage(null);
     setGeneratedCode(null);
     setChatHistory([]);
+    setCheckpoints([]);
     setRequirements(INITIAL_REQUIREMENTS);
     setAppState('generating');
   };
@@ -159,6 +186,7 @@ const App: React.FC = () => {
     setSelectedPackage(null);
     setGeneratedCode(null);
     setChatHistory([]);
+    setCheckpoints([]);
     setAppState('home');
   };
 
@@ -183,6 +211,36 @@ const App: React.FC = () => {
       setIsLoading(false);
     }
   };
+
+  const handleRevertRequest = (checkpoint: Checkpoint) => {
+    setCheckpointToRevert(checkpoint);
+  };
+
+  const handleConfirmRevert = async () => {
+      if (!checkpointToRevert || !selectedPackage) return;
+
+      setIsLoading(true);
+      setError(null);
+      
+      try {
+          await firestoreService.updatePackage(selectedPackage.id, checkpointToRevert.files);
+          setGeneratedCode(checkpointToRevert.files);
+          setSelectedPackage(prev => prev ? { ...prev, files: checkpointToRevert.files, updatedAt: new Date() } : null);
+
+          const revertMessage: ChatMessage = { role: 'model', content: `Successfully reverted to the version from "${checkpointToRevert.message}".` };
+          await firestoreService.addChatMessage(selectedPackage.id, revertMessage);
+          setChatHistory(prev => [...prev, revertMessage]);
+
+      } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during revert.';
+          setError(errorMessage);
+          const errorModelMessage: ChatMessage = { role: 'model', content: `I encountered an error trying to revert: ${errorMessage}` };
+          setChatHistory(prev => [...prev, errorModelMessage]);
+      } finally {
+          setIsLoading(false);
+          setCheckpointToRevert(null);
+      }
+  };
   
   const handleSendMessage = async (message: string) => {
     if (!message.trim() || !generatedCode || !selectedPackage) return;
@@ -198,6 +256,10 @@ const App: React.FC = () => {
     setIsThinkingPanelOpen(true);
 
     try {
+      await firestoreService.createCheckpoint(selectedPackage.id, message, generatedCode);
+      const updatedCheckpoints = await firestoreService.getCheckpoints(selectedPackage.id);
+      setCheckpoints(updatedCheckpoints);
+      
       const patch = await refineCode(message, generatedCode, setThinkingProgress);
       const updatedCode = applyCodePatch(generatedCode, patch);
 
@@ -252,6 +314,8 @@ const App: React.FC = () => {
                 isLoading={isLoading}
                 onBack={handleGoHome}
                 initialRequirements={selectedPackage?.initialRequirements || ''}
+                checkpoints={checkpoints}
+                onRevert={handleRevertRequest}
               />
             )}
 
@@ -289,7 +353,7 @@ const App: React.FC = () => {
                     }`}
                     aria-pressed={mobileView === 'left'}
                   >
-                    {appState === 'generating' ? 'Requirements' : 'Chat'}
+                    {appState === 'generating' ? 'Requirements' : 'Chat & History'}
                   </button>
                   <button
                     onClick={() => setMobileView('right')}
@@ -339,6 +403,14 @@ const App: React.FC = () => {
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
         shareKey={selectedPackage?.id || ''}
+      />
+      <ConfirmationModal
+        isOpen={!!checkpointToRevert}
+        onClose={() => setCheckpointToRevert(null)}
+        onConfirm={handleConfirmRevert}
+        title="Revert to this Version?"
+        message={`Are you sure you want to revert to the state from "${checkpointToRevert?.message}"? Any changes made after this version will be overwritten in your current view.`}
+        confirmText="Yes, Revert"
       />
     </div>
   );
