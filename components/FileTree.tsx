@@ -8,6 +8,7 @@ interface FileNode {
   name: string;
   file: GeneratedFile;
   path: string;
+  isChanged: boolean;
 }
 
 interface FolderNode {
@@ -15,14 +16,15 @@ interface FolderNode {
   name: string;
   path: string;
   children: TreeNode[];
+  isChanged: boolean;
 }
 
 type TreeNode = FileNode | FolderNode;
 
 
 // --- Helper function to build the tree ---
-const buildTree = (files: GeneratedFile[]): FolderNode => {
-    const root: FolderNode = { type: 'folder', name: 'root', path: '', children: [] };
+const buildTree = (files: GeneratedFile[], changedFilePaths: Set<string>): FolderNode => {
+    const root: FolderNode = { type: 'folder', name: 'root', path: '', children: [], isChanged: false };
     
     files.forEach(file => {
         let currentNode = root;
@@ -40,7 +42,8 @@ const buildTree = (files: GeneratedFile[]): FolderNode => {
                         type: 'file',
                         name: part,
                         file,
-                        path: file.path
+                        path: file.path,
+                        isChanged: changedFilePaths.has(file.path),
                     });
                 }
             } else { // It's a folder
@@ -49,13 +52,30 @@ const buildTree = (files: GeneratedFile[]): FolderNode => {
                 ) as FolderNode | undefined;
                 
                 if (!folderNode) {
-                    folderNode = { type: 'folder', name: part, path: currentPath, children: [] };
+                    folderNode = { type: 'folder', name: part, path: currentPath, children: [], isChanged: false };
                     currentNode.children.push(folderNode);
                 }
                 currentNode = folderNode;
             }
         });
     });
+
+    // Propagate the 'isChanged' status up to parent folders
+    const propagateChanges = (node: FolderNode): boolean => {
+        let hasChangedDescendant = false;
+        for (const child of node.children) {
+            if (child.type === 'folder') {
+                if (propagateChanges(child)) { // Recursively check subfolders
+                    hasChangedDescendant = true;
+                }
+            } else if (child.isChanged) { // Check files
+                hasChangedDescendant = true;
+            }
+        }
+        node.isChanged = hasChangedDescendant;
+        return hasChangedDescendant;
+    };
+    propagateChanges(root);
 
     // Recursive sort function to order children (folders first, then alphabetically)
     const sortChildren = (node: FolderNode) => {
@@ -81,7 +101,7 @@ const buildTree = (files: GeneratedFile[]): FolderNode => {
 const FolderIcon = ({ isOpen }: { isOpen: boolean }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 flex-shrink-0 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
         {isOpen ? (
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 12.75v-7.5a2.25 2.25 0 012.25-2.25h4.5l2.25 2.25h6.75a2.25 2.25 0 012.25 2.25v6.75a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25z" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 12.75v-7.5a2.25 2.25 0 012.25-2.25h4.5l2.25 2.25h6.75a2.25 2.25 0 012.25 2.25v6.75a2.25 2.25 0 01-2.25-2.25H6a2.25 2.25 0 01-2.25-2.25z" />
         ) : (
             <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
         )}
@@ -120,7 +140,7 @@ const TreeNodeComponent: React.FC<TreeNodeComponentProps> = ({ node, selectedFil
             <div className="text-sm">
                 <button
                     onClick={() => onToggleFolder(node.path)}
-                    className="w-full text-left py-1.5 rounded-md transition-colors duration-150 flex items-center text-gray-300 hover:bg-gray-700/50 focus:outline-none focus:bg-gray-700"
+                    className={`w-full text-left py-1.5 rounded-md transition-colors duration-150 flex items-center text-gray-300 hover:bg-gray-700/50 focus:outline-none focus:bg-gray-700 ${node.isChanged ? 'bg-green-900/40' : ''}`}
                     style={{ paddingLeft }}
                     aria-expanded={isExpanded}
                 >
@@ -155,7 +175,9 @@ const TreeNodeComponent: React.FC<TreeNodeComponentProps> = ({ node, selectedFil
             className={`w-full text-left py-1.5 rounded-md text-sm transition-colors duration-150 flex items-center font-mono ${
                 isSelected
                   ? 'bg-cyan-600/30 text-cyan-300'
-                  : 'text-gray-400 hover:bg-gray-700/50 hover:text-gray-200'
+                  : node.isChanged 
+                    ? 'bg-green-900/40 text-gray-200 hover:bg-green-800/50'
+                    : 'text-gray-400 hover:bg-gray-700/50 hover:text-gray-200'
               }`}
             style={{ paddingLeft }}
             aria-current={isSelected ? 'page' : undefined}
@@ -173,28 +195,37 @@ interface FileTreeProps {
   files: GeneratedFile[];
   selectedFile: GeneratedFile | null;
   onSelectFile: (file: GeneratedFile) => void;
+  changedFilePaths: Set<string>;
 }
 
-const FileTree: React.FC<FileTreeProps> = ({ files, selectedFile, onSelectFile }) => {
+const FileTree: React.FC<FileTreeProps> = ({ files, selectedFile, onSelectFile, changedFilePaths }) => {
     const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
 
-    const fileTree = useMemo(() => buildTree(files), [files]);
+    const fileTree = useMemo(() => buildTree(files, changedFilePaths), [files, changedFilePaths]);
     
     // Automatically expand the first level of folders when files are loaded
     useEffect(() => {
         if (fileTree.children.length > 0) {
             const initialExpanded: Record<string, boolean> = {};
             const expandChildren = (node: FolderNode, depth: number) => {
-                if (depth > 0) return; // Only expand top level
+                if (depth > 1) return; // Only expand top two levels
                  if (node.type === 'folder') {
                     initialExpanded[node.path] = true;
-                    node.children.forEach(child => expandChildren(child as FolderNode, depth + 1));
+                    node.children.forEach(child => {
+                        if (child.type === 'folder') {
+                            expandChildren(child, depth + 1);
+                        }
+                    });
                  }
             }
-            fileTree.children.forEach(child => expandChildren(child as FolderNode, 0));
+            fileTree.children.forEach(child => {
+                if (child.type === 'folder') {
+                    expandChildren(child, 0);
+                }
+            });
             setExpandedFolders(initialExpanded);
         }
-    }, [fileTree]);
+    }, [files]); // Only run when the file list itself changes, not on highlight changes
 
     const handleToggleFolder = (path: string) => {
         setExpandedFolders(prev => ({

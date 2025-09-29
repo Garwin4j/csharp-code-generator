@@ -52,6 +52,21 @@ const applyCodePatch = (currentCode: GeneratedFile[], patch: FilePatch[]): Gener
   return newCode;
 };
 
+const findChangedFiles = (oldFiles: GeneratedFile[], newFiles: GeneratedFile[]): Set<string> => {
+    const oldFileMap = new Map(oldFiles.map(f => [f.path, f.content]));
+    const newFileMap = new Map(newFiles.map(f => [f.path, f.content]));
+    const changed = new Set<string>();
+
+    for (const [path, content] of newFileMap.entries()) {
+        // A file is considered changed if it's new OR its content is different.
+        if (!oldFileMap.has(path) || oldFileMap.get(path) !== content) {
+            changed.add(path);
+        }
+    }
+    return changed;
+};
+
+
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>('loading');
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -64,6 +79,7 @@ const App: React.FC = () => {
   const [generatedCode, setGeneratedCode] = useState<GeneratedFile[] | null>(null);
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [checkpointToRevert, setCheckpointToRevert] = useState<Checkpoint | null>(null);
+  const [changedFilePaths, setChangedFilePaths] = useState<Set<string>>(new Set());
   
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -137,6 +153,7 @@ const App: React.FC = () => {
     setChatHistory([]);
     setPackages([]);
     setCheckpoints([]);
+    setChangedFilePaths(new Set());
     setAppState('home');
   };
 
@@ -146,6 +163,7 @@ const App: React.FC = () => {
       setIsLoading(true);
       setSelectedPackage(pkg);
       setGeneratedCode(pkg.files);
+      setChangedFilePaths(new Set()); // Clear highlights on new selection
       const history = await firestoreService.getPackageChatHistory(pkg.id);
       setChatHistory(history);
       const packageCheckpoints = await firestoreService.getCheckpoints(pkg.id);
@@ -162,6 +180,7 @@ const App: React.FC = () => {
     if (pkg) {
         setSelectedPackage(pkg);
         setGeneratedCode(pkg.files);
+        setChangedFilePaths(new Set());
         const history = await firestoreService.getPackageChatHistory(pkg.id);
         setChatHistory(history);
         const packageCheckpoints = await firestoreService.getCheckpoints(pkg.id);
@@ -178,6 +197,7 @@ const App: React.FC = () => {
     setGeneratedCode(null);
     setChatHistory([]);
     setCheckpoints([]);
+    setChangedFilePaths(new Set());
     setRequirements(INITIAL_REQUIREMENTS);
     setAppState('generating');
   };
@@ -187,6 +207,7 @@ const App: React.FC = () => {
     setGeneratedCode(null);
     setChatHistory([]);
     setCheckpoints([]);
+    setChangedFilePaths(new Set());
     setAppState('home');
   };
 
@@ -194,6 +215,7 @@ const App: React.FC = () => {
     if (!requirements.trim()) return;
     setIsLoading(true);
     setError(null);
+    setChangedFilePaths(new Set());
   
     try {
       // Create package first, works for guests (user?.uid is undefined) and logged-in users
@@ -218,6 +240,10 @@ const App: React.FC = () => {
 
   const handleConfirmRevert = async () => {
       if (!checkpointToRevert || !selectedPackage) return;
+      
+      const currentCode = selectedPackage.files || [];
+      const changedPaths = findChangedFiles(currentCode, checkpointToRevert.files);
+      setChangedFilePaths(changedPaths);
 
       setIsLoading(true);
       setError(null);
@@ -267,6 +293,7 @@ const App: React.FC = () => {
       
       setGeneratedCode(updatedCode);
       setSelectedPackage(prev => prev ? { ...prev, files: updatedCode, updatedAt: new Date() } : null);
+      setChangedFilePaths(new Set(patch.map(p => p.path)));
 
       const modelMessage: ChatMessage = { role: 'model', content: "Done! I've updated the code based on your request. Take a look at the changes." };
       await firestoreService.addChatMessage(selectedPackage.id, modelMessage);
@@ -275,6 +302,7 @@ const App: React.FC = () => {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
       setError(errorMessage);
+      setChangedFilePaths(new Set()); // Clear highlights on error
       const errorModelMessage: ChatMessage = { role: 'model', content: `I encountered an error trying to process that: ${errorMessage}` };
       await firestoreService.addChatMessage(selectedPackage.id, errorModelMessage);
       setChatHistory([...newHistory, errorModelMessage]);
@@ -298,7 +326,7 @@ const App: React.FC = () => {
       case 'generating':
       case 'chat': {
         const leftPanelContent = (
-          <div className="flex flex-col gap-4 h-full">
+          <div className="flex flex-col h-full">
             {appState === 'generating' ? (
               <RequirementInput
                 value={requirements}
@@ -316,14 +344,9 @@ const App: React.FC = () => {
                 initialRequirements={selectedPackage?.initialRequirements || ''}
                 checkpoints={checkpoints}
                 onRevert={handleRevertRequest}
-              />
-            )}
-
-            {isLoading && appState === 'chat' && (
-              <ThinkingProgress
-                progress={thinkingProgress}
-                isOpen={isThinkingPanelOpen}
-                onToggle={() => setIsThinkingPanelOpen(!isThinkingPanelOpen)}
+                thinkingProgress={thinkingProgress}
+                isThinkingPanelOpen={isThinkingPanelOpen}
+                onToggleThinkingPanel={() => setIsThinkingPanelOpen(!isThinkingPanelOpen)}
               />
             )}
           </div>
@@ -334,6 +357,7 @@ const App: React.FC = () => {
             generatedCode={generatedCode}
             isLoading={(isLoading && !generatedCode) || selectedPackage?.status === 'generating' && !generatedCode}
             error={error || selectedPackage?.error || null}
+            changedFilePaths={changedFilePaths}
           />
         );
 

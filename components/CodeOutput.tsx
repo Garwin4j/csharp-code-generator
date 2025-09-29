@@ -8,9 +8,10 @@ interface CodeOutputProps {
   generatedCode: GeneratedFile[] | null;
   isLoading: boolean;
   error: string | null;
+  changedFilePaths: Set<string>;
 }
 
-const CodeOutput: React.FC<CodeOutputProps> = ({ generatedCode, isLoading, error }) => {
+const CodeOutput: React.FC<CodeOutputProps> = ({ generatedCode, isLoading, error, changedFilePaths }) => {
   const [selectedFile, setSelectedFile] = useState<GeneratedFile | null>(null);
 
   useEffect(() => {
@@ -94,6 +95,7 @@ const CodeOutput: React.FC<CodeOutputProps> = ({ generatedCode, isLoading, error
           files={generatedCode}
           selectedFile={selectedFile}
           onSelectFile={setSelectedFile}
+          changedFilePaths={changedFilePaths}
         />
         <CodeViewer file={selectedFile} />
       </div>

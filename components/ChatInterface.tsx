@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import { ChatMessage, Checkpoint } from '../types';
 import { consolidateRequirements } from '../services/geminiService';
 import CheckpointHistory from './CheckpointHistory';
+import ThinkingProgress from './ThinkingProgress';
 
 interface ChatInterfaceProps {
   chatHistory: ChatMessage[];
@@ -13,9 +14,23 @@ interface ChatInterfaceProps {
   initialRequirements: string;
   checkpoints: Checkpoint[];
   onRevert: (checkpoint: Checkpoint) => void;
+  thinkingProgress: string;
+  isThinkingPanelOpen: boolean;
+  onToggleThinkingPanel: () => void;
 }
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ chatHistory, onSendMessage, isLoading, onBack, initialRequirements, checkpoints, onRevert }) => {
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ 
+    chatHistory, 
+    onSendMessage, 
+    isLoading, 
+    onBack, 
+    initialRequirements, 
+    checkpoints, 
+    onRevert,
+    thinkingProgress,
+    isThinkingPanelOpen,
+    onToggleThinkingPanel,
+}) => {
   const [message, setMessage] = useState('');
   const [isConsolidating, setIsConsolidating] = useState(false);
   const [activeTab, setActiveTab] = useState<'chat' | 'history'>('chat');
@@ -134,6 +149,15 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ chatHistory, onSendMessag
                 </div>
             )}
           </div>
+          {isLoading && (
+            <div className="flex-shrink-0 p-4 border-t border-gray-700">
+                <ThinkingProgress 
+                    progress={thinkingProgress}
+                    isOpen={isThinkingPanelOpen}
+                    onToggle={onToggleThinkingPanel}
+                />
+            </div>
+          )}
           <div className="p-4 bg-gray-800 border-t border-gray-700">
             <form onSubmit={handleSubmit} className="flex gap-2">
               <textarea
