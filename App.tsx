@@ -311,6 +311,30 @@ const App: React.FC = () => {
     }
   };
 
+  const handleSaveFile = async (path: string, content: string) => {
+    if (!generatedCode || !selectedPackage) return;
+
+    const originalCode = [...generatedCode]; // Keep a copy in case of failure
+    const updatedCode = generatedCode.map(f =>
+        f.path === path ? { ...f, content } : f
+    );
+    
+    // Optimistically update UI
+    setGeneratedCode(updatedCode);
+    setSelectedPackage(prev => prev ? { ...prev, files: updatedCode, updatedAt: new Date() } : null);
+    setChangedFilePaths(prev => new Set(prev).add(path));
+
+    try {
+        await firestoreService.updatePackage(selectedPackage.id, updatedCode);
+    } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+        setError(`Failed to save file "${path}": ${errorMessage}`);
+        // Revert UI on failure
+        setGeneratedCode(originalCode);
+        setSelectedPackage(prev => prev ? { ...prev, files: originalCode } : null);
+    }
+  };
+
   const renderContent = () => {
     switch(appState) {
       case 'home':
@@ -358,6 +382,7 @@ const App: React.FC = () => {
             isLoading={(isLoading && !generatedCode) || selectedPackage?.status === 'generating' && !generatedCode}
             error={error || selectedPackage?.error || null}
             changedFilePaths={changedFilePaths}
+            onSaveFile={handleSaveFile}
           />
         );
 
