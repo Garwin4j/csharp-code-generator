@@ -439,9 +439,8 @@ const App: React.FC = () => {
       setChatHistory([...newHistory, modelMessage]);
 
     } catch (err) {
-      // Fix: The 'err' variable in a catch block is of type 'unknown'.
-      // It must be safely converted to a string before being used with functions
-      // like setError, which expect a string.
+      // FIX: The 'err' variable from a catch block is of type 'unknown'. To prevent a TypeScript error,
+      // we must safely determine its type before using it as a string.
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
       setError(errorMessage);
       setChangedFilePaths(new Set()); // Clear highlights on error
@@ -524,6 +523,7 @@ const App: React.FC = () => {
                 thinkingProgress={thinkingProgress}
                 isThinkingPanelOpen={isThinkingPanelOpen}
                 onToggleThinkingPanel={() => setIsThinkingPanelOpen(!isThinkingPanelOpen)}
+                projectName={selectedPackage?.name || ''}
               />
             )}
           </div>

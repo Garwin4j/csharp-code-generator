@@ -17,9 +17,6 @@ const Header: React.FC<HeaderProps> = ({ user, onLogout, onLogin, onShowKey, isG
           <h1 className="text-xl lg:text-2xl font-bold text-cyan-400">
             C# Clean Architecture Code Generator
           </h1>
-          <p className="text-xs text-gray-400">
-            Powered by Google Gemini
-          </p>
       </div>
       <div className="flex items-center gap-4">
         {isGuest ? (

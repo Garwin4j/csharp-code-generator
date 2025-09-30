@@ -17,6 +17,7 @@ interface ChatInterfaceProps {
   thinkingProgress: string;
   isThinkingPanelOpen: boolean;
   onToggleThinkingPanel: () => void;
+  projectName: string;
 }
 
 const ChatInterface: React.FC<ChatInterfaceProps> = ({ 
@@ -30,6 +31,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     thinkingProgress,
     isThinkingPanelOpen,
     onToggleThinkingPanel,
+    projectName,
 }) => {
   const [message, setMessage] = useState('');
   const [isConsolidating, setIsConsolidating] = useState(false);
@@ -82,8 +84,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     <div className="flex flex-col bg-gray-800 overflow-hidden flex-grow min-h-0">
       <div className="p-4 border-b border-gray-700 flex justify-between items-center flex-wrap gap-2">
         <div>
-            <h2 className="text-xl font-semibold text-white">Refine Your Project</h2>
-            <p className="text-sm text-gray-400">Chat with the AI to make changes to the generated code.</p>
+            <h2 className="text-xl font-semibold text-white">Refine: <span className="text-cyan-400">{projectName}</span></h2>
+            <p className="text-sm text-gray-400">Chat with the AI to make changes or view version history.</p>
         </div>
         <div className="flex items-center gap-2">
             <button
