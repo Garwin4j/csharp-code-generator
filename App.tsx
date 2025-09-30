@@ -298,10 +298,8 @@ const App: React.FC = () => {
       generateCode(newPackage.id, requirements);
   
     } catch (err) {
-      // FIX: The 'err' from a catch block is of type 'unknown'. It must be checked
-      // to safely access properties like 'message' and to be passed to functions
-      // expecting a string, like setError.
-      // Refactored to match consistent error handling pattern used elsewhere in the component.
+      // The 'err' object from a catch block is of type 'unknown'.
+      // This ensures we safely handle it before setting the state.
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred while starting generation.';
       setError(errorMessage);
       setAppState('generating');
@@ -441,6 +439,9 @@ const App: React.FC = () => {
       setChatHistory([...newHistory, modelMessage]);
 
     } catch (err) {
+      // Fix: The 'err' variable in a catch block is of type 'unknown'.
+      // It must be safely converted to a string before being used with functions
+      // like setError, which expect a string.
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
       setError(errorMessage);
       setChangedFilePaths(new Set()); // Clear highlights on error
@@ -530,6 +531,8 @@ const App: React.FC = () => {
 
         const rightPanelContent = (
           <CodeOutput
+            selectedPackage={selectedPackage}
+            checkpoints={checkpoints}
             generatedCode={generatedCode}
             isLoading={(isLoading && !generatedCode) || selectedPackage?.status === 'generating' && !generatedCode}
             error={error || selectedPackage?.error || null}

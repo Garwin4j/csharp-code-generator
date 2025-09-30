@@ -1,5 +1,4 @@
 
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { GeneratedFile } from '../types';
 
@@ -97,6 +96,18 @@ const buildTree = (files: GeneratedFile[], changedFilePaths: Set<string>): Folde
     return root;
 };
 
+// Helper function to get all folder paths from the tree for expand/collapse all
+const getAllFolderPaths = (node: FolderNode): string[] => {
+    let paths: string[] = [];
+    node.children.forEach(child => {
+        if (child.type === 'folder') {
+            paths.push(child.path);
+            paths = paths.concat(getAllFolderPaths(child));
+        }
+    });
+    return paths;
+};
+
 
 // --- SVG Icon Components ---
 const FolderIcon = ({ isOpen }: { isOpen: boolean }) => (
@@ -120,6 +131,19 @@ const ChevronIcon = ({ isOpen }: { isOpen: boolean }) => (
         <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
     </svg>
 );
+
+const ExpandAllIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 0h-4m4 0l-5-5" />
+    </svg>
+);
+
+const CollapseAllIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M8 4H4m0 0v4m0-4l5 5m7-5h4m0 0v4m0-4l-5 5M8 20H4m0 0v-4m0 4l5-5m7 5h4m0 0v-4m0 4l-5-5" />
+    </svg>
+);
+
 
 
 // --- Recursive Tree Node Renderer ---
@@ -204,29 +228,10 @@ const FileTree: React.FC<FileTreeProps> = ({ files, selectedFile, onSelectFile, 
 
     const fileTree = useMemo(() => buildTree(files, changedFilePaths), [files, changedFilePaths]);
     
-    // Automatically expand the first level of folders when files are loaded
+    // Collapse all folders when the file list changes (e.g., after generation or revert)
     useEffect(() => {
-        if (fileTree.children.length > 0) {
-            const initialExpanded: Record<string, boolean> = {};
-            const expandChildren = (node: FolderNode, depth: number) => {
-                if (depth > 1) return; // Only expand top two levels
-                 if (node.type === 'folder') {
-                    initialExpanded[node.path] = true;
-                    node.children.forEach(child => {
-                        if (child.type === 'folder') {
-                            expandChildren(child, depth + 1);
-                        }
-                    });
-                 }
-            }
-            fileTree.children.forEach(child => {
-                if (child.type === 'folder') {
-                    expandChildren(child, 0);
-                }
-            });
-            setExpandedFolders(initialExpanded);
-        }
-    }, [files]); // Only run when the file list itself changes, not on highlight changes
+        setExpandedFolders({});
+    }, [files]); 
 
     const handleToggleFolder = (path: string) => {
         setExpandedFolders(prev => ({
@@ -235,9 +240,43 @@ const FileTree: React.FC<FileTreeProps> = ({ files, selectedFile, onSelectFile, 
         }));
     };
 
+    const handleExpandAll = () => {
+        const allFolderPaths = getAllFolderPaths(fileTree);
+        const allExpanded = allFolderPaths.reduce((acc, path) => {
+            acc[path] = true;
+            return acc;
+        }, {} as Record<string, boolean>);
+        setExpandedFolders(allExpanded);
+    };
+
+    const handleCollapseAll = () => {
+        setExpandedFolders({});
+    };
+
   return (
-    <div className="bg-gray-900 h-full overflow-y-auto border-r border-gray-700">
-      <div className="p-2">
+    <div className="bg-gray-900 h-full border-r border-gray-700 flex flex-col">
+       <div className="p-2 border-b border-gray-700 flex-shrink-0 flex items-center justify-between">
+        <span className="font-semibold text-sm text-gray-300 pl-1">Project Files</span>
+        <div className="flex items-center gap-1">
+            <button 
+                onClick={handleExpandAll}
+                className="p-1.5 rounded-md hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
+                title="Expand All"
+                aria-label="Expand all folders"
+            >
+                <ExpandAllIcon />
+            </button>
+            <button 
+                onClick={handleCollapseAll}
+                className="p-1.5 rounded-md hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
+                title="Collapse All"
+                aria-label="Collapse all folders"
+            >
+                <CollapseAllIcon />
+            </button>
+        </div>
+      </div>
+      <div className="p-2 overflow-y-auto flex-grow">
         {fileTree.children.map((node) => (
           <TreeNodeComponent
             key={node.path}

@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { GeneratedFile } from '../types';
+import { GeneratedFile, Package, Checkpoint } from '../types';
 import FileTree from './FileTree';
 import CodeViewer from './CodeViewer';
 import JSZip from 'jszip';
 
 interface CodeOutputProps {
+  selectedPackage: Package | null;
+  checkpoints: Checkpoint[];
   generatedCode: GeneratedFile[] | null;
   isLoading: boolean;
   error: string | null;
@@ -24,7 +26,7 @@ const CollapseIcon = ({ isCollapsed }: { isCollapsed: boolean }) => (
 );
 
 
-const CodeOutput: React.FC<CodeOutputProps> = ({ generatedCode, isLoading, error, changedFilePaths, onSaveFile, fileDiffs }) => {
+const CodeOutput: React.FC<CodeOutputProps> = ({ selectedPackage, checkpoints, generatedCode, isLoading, error, changedFilePaths, onSaveFile, fileDiffs }) => {
   const [selectedFile, setSelectedFile] = useState<GeneratedFile | null>(null);
   const [isFileTreeCollapsed, setIsFileTreeCollapsed] = useState(false);
   const [fileTreeWidth, setFileTreeWidth] = useState(300);
@@ -85,7 +87,7 @@ const CodeOutput: React.FC<CodeOutputProps> = ({ generatedCode, isLoading, error
   }, [mouseMoveHandler, mouseUpHandler]);
 
   const handleDownloadZip = async () => {
-    if (!generatedCode || generatedCode.length === 0) return;
+    if (!generatedCode || generatedCode.length === 0 || !selectedPackage) return;
 
     const zip = new JSZip();
     generatedCode.forEach(file => {
@@ -93,10 +95,21 @@ const CodeOutput: React.FC<CodeOutputProps> = ({ generatedCode, isLoading, error
     });
 
     try {
+      const projectName = selectedPackage.name.replace(/[^a-zA-Z0-9-]/g, '_').replace(/_+/g, '_');
+      const revisionNumber = checkpoints.length;
+      
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const day = String(today.getDate()).padStart(2, '0');
+      const dateString = `${year}-${month}-${day}`;
+      
+      const fileName = `${projectName}_${revisionNumber}_${dateString}.zip`;
+
       const blob = await zip.generateAsync({ type: 'blob' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = 'Pd.Starter-Generated-Code.zip';
+      link.download = fileName;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);

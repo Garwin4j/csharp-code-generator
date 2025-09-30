@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { GeneratedFile, FilePatch, ChatMessage } from '../types';
 import * as firestoreService from './firestoreService';
@@ -108,12 +109,19 @@ export async function generateCode(
     });
 
     let fullJsonResponse = '';
+    let lastUpdateTime = 0;
+    const UPDATE_INTERVAL = 2000; // Update Firestore at most every 2 seconds
+
     for await (const chunk of responseStream) {
         const chunkText = chunk.text;
         if (chunkText) {
             fullJsonResponse += chunkText;
-            // Update firestore with progress. No need to await, can be fire-and-forget
-            firestoreService.updatePackageGenerationProgress(packageId, fullJsonResponse);
+            const now = Date.now();
+            if (now - lastUpdateTime > UPDATE_INTERVAL) {
+                // Fire-and-forget update to not block the stream
+                firestoreService.updatePackageGenerationProgress(packageId, fullJsonResponse);
+                lastUpdateTime = now;
+            }
         }
     }
     
