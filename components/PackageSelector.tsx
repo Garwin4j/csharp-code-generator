@@ -15,7 +15,7 @@ const formatDuration = (seconds: number) => {
     return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
 };
 
-const GeneratingPackageCard: React.FC<{ pkg: Package }> = ({ pkg }) => {
+const GeneratingPackageCard: React.FC<{ pkg: Package; onDelete: (pkg: Package) => void; }> = ({ pkg, onDelete }) => {
     const [elapsedTime, setElapsedTime] = useState(0);
 
     useEffect(() => {
@@ -64,12 +64,24 @@ const GeneratingPackageCard: React.FC<{ pkg: Package }> = ({ pkg }) => {
             </div>
             <div className="mt-6">
                 <p className="text-xs text-gray-500">Started: {pkg.createdAt.toLocaleString()}</p>
-                <button
-                    disabled
-                    className="w-full mt-2 bg-gray-700/50 text-gray-500 font-semibold py-2 px-4 rounded-md cursor-not-allowed"
-                >
-                  Processing...
-                </button>
+                <div className="flex items-center gap-2 mt-2">
+                    <button
+                        disabled
+                        className="w-full bg-gray-700/50 text-gray-500 font-semibold py-2 px-4 rounded-md cursor-not-allowed"
+                    >
+                      Processing...
+                    </button>
+                    <button
+                        onClick={() => onDelete(pkg)}
+                        className="p-2 rounded-md bg-gray-700 hover:bg-red-600/80 text-gray-400 hover:text-white transition-colors"
+                        title="Delete Project"
+                        aria-label={`Delete project ${pkg.name}`}
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                    </button>
+                </div>
             </div>
         </div>
     );
@@ -112,7 +124,7 @@ const PackageSelector: React.FC<PackageSelectorProps> = ({ packages, onSelect, o
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {packages.map((pkg) => {
             if (pkg.status === 'generating') {
-                return <GeneratingPackageCard key={pkg.id} pkg={pkg} />;
+                return <GeneratingPackageCard key={pkg.id} pkg={pkg} onDelete={onDelete} />;
             }
             if (pkg.status === 'failed') {
                 return <FailedPackageCard key={pkg.id} pkg={pkg} onDelete={onDelete} />;

@@ -298,9 +298,9 @@ const App: React.FC = () => {
       generateCode(newPackage.id, requirements);
   
     } catch (err) {
-      // FIX: The 'err' variable from a catch block is of type 'unknown'.
-      // We must check if it's an instance of Error before accessing properties like 'message'.
-      // This ensures type safety and prevents passing a non-string value to setError.
+      // FIX: The 'err' from a catch block is of type 'unknown'. It must be checked
+      // to safely access properties like 'message' and to be passed to functions
+      // expecting a string, like setError.
       if (err instanceof Error) {
         setError(err.message);
       } else {
