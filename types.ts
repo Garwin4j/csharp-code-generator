@@ -6,6 +6,7 @@ export interface GeneratedFile {
 export interface ChatMessage {
     role: 'user' | 'model';
     content: string;
+    images?: { mimeType: string; data: string; name: string; }[]; // data is base64
     timestamp?: Date;
 }
 

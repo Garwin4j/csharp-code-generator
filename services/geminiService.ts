@@ -1,4 +1,5 @@
 
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { GeneratedFile, FilePatch, ChatMessage } from '../types';
 import * as firestoreService from './firestoreService';
@@ -142,7 +143,8 @@ export async function generateCode(
 export async function refineCode(
     changeRequest: string,
     currentCode: GeneratedFile[],
-    onProgress: (progress: string) => void
+    onProgress: (progress: string) => void,
+    images?: { mimeType: string; data: string }[]
 ): Promise<FilePatch[]> {
     let currentCodeJson: string;
     try {
@@ -160,6 +162,7 @@ export async function refineCode(
     const prompt = `
     You are an expert C# .NET architect specializing in Clean Architecture.
     A C# codebase is provided as a JSON array. The user wants to make changes to it.
+    If the user provides images, use them as context for the change request.
 
     Your task is to analyze the user's change request and the current codebase, and return ONLY a JSON array of operations representing the necessary changes. This is a "patch".
 
@@ -201,10 +204,20 @@ export async function refineCode(
     ---
   `;
 
+    const textPart = { text: prompt };
+    const imageParts = images?.map(img => ({
+        inlineData: {
+            mimeType: img.mimeType,
+            data: img.data,
+        },
+    })) || [];
+
+    const contents = { parts: [textPart, ...imageParts] };
+
     try {
         const responseStream = await ai.models.generateContentStream({
             model: "gemini-2.5-flash",
-            contents: prompt,
+            contents: contents,
             config: {
                 responseMimeType: "application/json",
                 responseSchema: PATCH_RESPONSE_SCHEMA,

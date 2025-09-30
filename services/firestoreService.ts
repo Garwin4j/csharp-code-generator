@@ -1,4 +1,5 @@
 
+
 import {
   collection,
   addDoc,
@@ -226,6 +227,7 @@ export const getPackageChatHistory = async (packageId: string): Promise<ChatMess
         return {
             role: data.role,
             content: data.content,
+            images: data.images || [],
             timestamp: (data.timestamp as Timestamp)?.toDate(),
         } as ChatMessage;
     });

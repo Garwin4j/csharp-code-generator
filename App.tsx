@@ -375,14 +375,14 @@ const App: React.FC = () => {
           setGeneratedCode(newCode);
           setSelectedPackage(prev => prev ? { ...prev, files: newCode, updatedAt: new Date() } : null);
 
-          const revertMessage: ChatMessage = { role: 'model', content: `Successfully reverted to the version from "${checkpointToRevert.message}".`, timestamp: new Date() };
+          const revertMessage: ChatMessage = { role: 'model', content: `Successfully reverted to the version from "${checkpointToRevert.message}".`, timestamp: new Date(), images: [] };
           await firestoreService.addChatMessage(selectedPackage.id, revertMessage);
           setChatHistory(prev => [...prev, revertMessage]);
 
       } catch (err) {
           const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during revert.';
           setError(errorMessage);
-          const errorModelMessage: ChatMessage = { role: 'model', content: `I encountered an error trying to revert: ${errorMessage}`, timestamp: new Date() };
+          const errorModelMessage: ChatMessage = { role: 'model', content: `I encountered an error trying to revert: ${errorMessage}`, timestamp: new Date(), images: [] };
           setChatHistory(prev => [...prev, errorModelMessage]);
       } finally {
           setIsLoading(false);
@@ -390,10 +390,10 @@ const App: React.FC = () => {
       }
   };
   
-  const handleSendMessage = async (message: string) => {
-    if (!message.trim() || !generatedCode || !selectedPackage) return;
+  const handleSendMessage = async (message: string, images: { mimeType: string, data: string, name: string }[]) => {
+    if ((!message.trim() && images.length === 0) || !generatedCode || !selectedPackage) return;
 
-    const userMessage: ChatMessage = { role: 'user', content: message, timestamp: new Date() };
+    const userMessage: ChatMessage = { role: 'user', content: message, images, timestamp: new Date() };
     const newHistory = [...chatHistory, userMessage];
     setChatHistory(newHistory);
     await firestoreService.addChatMessage(selectedPackage.id, userMessage);
@@ -405,12 +405,12 @@ const App: React.FC = () => {
     setFileDiffs(new Map()); // Clear previous diffs
 
     try {
-      await firestoreService.createCheckpoint(selectedPackage.id, message, generatedCode);
+      await firestoreService.createCheckpoint(selectedPackage.id, message || 'Image-based change', generatedCode);
       const updatedCheckpoints = await firestoreService.getCheckpoints(selectedPackage.id);
       setCheckpoints(updatedCheckpoints);
       
       const oldCode = [...generatedCode]; // Capture old state for diffing
-      const patch = await refineCode(message, generatedCode, setThinkingProgress);
+      const patch = await refineCode(message, generatedCode, setThinkingProgress, images);
       const updatedCode = applyCodePatch(generatedCode, patch);
 
       // Calculate diffs for changed files
@@ -434,17 +434,19 @@ const App: React.FC = () => {
       setSelectedPackage(prev => prev ? { ...prev, files: updatedCode, updatedAt: new Date() } : null);
       setChangedFilePaths(new Set(patch.map(p => p.path)));
 
-      const modelMessage: ChatMessage = { role: 'model', content: "Done! I've updated the code based on your request. Take a look at the changes.", timestamp: new Date() };
+      const modelMessage: ChatMessage = { role: 'model', content: "Done! I've updated the code based on your request. Take a look at the changes.", timestamp: new Date(), images: [] };
       await firestoreService.addChatMessage(selectedPackage.id, modelMessage);
       setChatHistory([...newHistory, modelMessage]);
 
     } catch (err) {
-      // FIX: The 'err' variable from a catch block is of type 'unknown'. To prevent a TypeScript error,
-      // we must safely determine its type before using it as a string.
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+      // FIX: Explicitly handle the 'unknown' type from the catch block to ensure a string is always passed to setError.
+      let errorMessage = 'An unknown error occurred.';
+      if (err instanceof Error) {
+        errorMessage = err.message;
+      }
       setError(errorMessage);
       setChangedFilePaths(new Set()); // Clear highlights on error
-      const errorModelMessage: ChatMessage = { role: 'model', content: `I encountered an error trying to process that: ${errorMessage}`, timestamp: new Date() };
+      const errorModelMessage: ChatMessage = { role: 'model', content: `I encountered an error trying to process that: ${errorMessage}`, timestamp: new Date(), images: [] };
       await firestoreService.addChatMessage(selectedPackage.id, errorModelMessage);
       setChatHistory([...newHistory, errorModelMessage]);
     } finally {
