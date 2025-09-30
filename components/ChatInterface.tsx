@@ -134,10 +134,17 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
           <div ref={chatContainerRef} className="flex-grow p-4 overflow-y-auto space-y-4">
             {chatHistory.map((chat, index) => (
               <div key={index} className={`flex ${chat.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`rounded-lg px-4 py-2 max-w-lg ${chat.role === 'user' ? 'bg-cyan-800 text-white' : 'bg-gray-700 text-gray-200'}`}>
-                    <div className="prose-styles text-white">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{chat.content}</ReactMarkdown>
+                <div className={`flex flex-col ${chat.role === 'user' ? 'items-end' : 'items-start'}`}>
+                    <div className={`rounded-lg px-4 py-2 max-w-lg ${chat.role === 'user' ? 'bg-cyan-800 text-white' : 'bg-gray-700 text-gray-200'}`}>
+                        <div className="prose-styles text-white">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{chat.content}</ReactMarkdown>
+                        </div>
                     </div>
+                    {chat.timestamp && (
+                        <p className="text-xs text-gray-500 mt-1 px-1">
+                            {chat.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                    )}
                 </div>
               </div>
             ))}

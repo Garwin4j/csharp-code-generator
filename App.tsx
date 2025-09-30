@@ -1,3 +1,5 @@
+
+
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut, User as FirebaseUser, signInWithPopup } from 'firebase/auth';
 import { auth, googleProvider } from './firebaseConfig';
@@ -134,6 +136,7 @@ const App: React.FC = () => {
   
   const [packages, setPackages] = useState<Package[]>([]);
   const [selectedPackage, setSelectedPackage] = useState<Package | null>(null);
+  const [packageToDelete, setPackageToDelete] = useState<Package | null>(null);
   
   const [requirements, setRequirements] = useState<string>(INITIAL_REQUIREMENTS);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
@@ -295,12 +298,40 @@ const App: React.FC = () => {
       generateCode(newPackage.id, requirements);
   
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred while starting generation.');
+      // FIX: The 'err' variable from a catch block is of type 'unknown'.
+      // We must check if it's an instance of Error before accessing properties like 'message'.
+      // This ensures type safety and prevents passing a non-string value to setError.
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('An unknown error occurred while starting generation.');
+      }
       setAppState('generating');
     } finally {
       setIsLoading(false);
     }
   };
+
+  const handleDeleteRequest = (pkg: Package) => {
+    setPackageToDelete(pkg);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!packageToDelete) return;
+    setIsLoading(true);
+    try {
+      await firestoreService.deletePackage(packageToDelete.id);
+      // The onSnapshot listener will automatically refresh the package list.
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during deletion.';
+      setError(errorMessage); // This error could be shown in a toast/notification
+      console.error("Failed to delete package:", errorMessage);
+    } finally {
+      setIsLoading(false);
+      setPackageToDelete(null);
+    }
+  };
+
 
   const handleRevertRequest = (checkpoint: Checkpoint) => {
     setCheckpointToRevert(checkpoint);
@@ -336,14 +367,14 @@ const App: React.FC = () => {
           setGeneratedCode(newCode);
           setSelectedPackage(prev => prev ? { ...prev, files: newCode, updatedAt: new Date() } : null);
 
-          const revertMessage: ChatMessage = { role: 'model', content: `Successfully reverted to the version from "${checkpointToRevert.message}".` };
+          const revertMessage: ChatMessage = { role: 'model', content: `Successfully reverted to the version from "${checkpointToRevert.message}".`, timestamp: new Date() };
           await firestoreService.addChatMessage(selectedPackage.id, revertMessage);
           setChatHistory(prev => [...prev, revertMessage]);
 
       } catch (err) {
           const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during revert.';
           setError(errorMessage);
-          const errorModelMessage: ChatMessage = { role: 'model', content: `I encountered an error trying to revert: ${errorMessage}` };
+          const errorModelMessage: ChatMessage = { role: 'model', content: `I encountered an error trying to revert: ${errorMessage}`, timestamp: new Date() };
           setChatHistory(prev => [...prev, errorModelMessage]);
       } finally {
           setIsLoading(false);
@@ -354,7 +385,7 @@ const App: React.FC = () => {
   const handleSendMessage = async (message: string) => {
     if (!message.trim() || !generatedCode || !selectedPackage) return;
 
-    const userMessage: ChatMessage = { role: 'user', content: message };
+    const userMessage: ChatMessage = { role: 'user', content: message, timestamp: new Date() };
     const newHistory = [...chatHistory, userMessage];
     setChatHistory(newHistory);
     await firestoreService.addChatMessage(selectedPackage.id, userMessage);
@@ -395,7 +426,7 @@ const App: React.FC = () => {
       setSelectedPackage(prev => prev ? { ...prev, files: updatedCode, updatedAt: new Date() } : null);
       setChangedFilePaths(new Set(patch.map(p => p.path)));
 
-      const modelMessage: ChatMessage = { role: 'model', content: "Done! I've updated the code based on your request. Take a look at the changes." };
+      const modelMessage: ChatMessage = { role: 'model', content: "Done! I've updated the code based on your request. Take a look at the changes.", timestamp: new Date() };
       await firestoreService.addChatMessage(selectedPackage.id, modelMessage);
       setChatHistory([...newHistory, modelMessage]);
 
@@ -403,7 +434,7 @@ const App: React.FC = () => {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
       setError(errorMessage);
       setChangedFilePaths(new Set()); // Clear highlights on error
-      const errorModelMessage: ChatMessage = { role: 'model', content: `I encountered an error trying to process that: ${errorMessage}` };
+      const errorModelMessage: ChatMessage = { role: 'model', content: `I encountered an error trying to process that: ${errorMessage}`, timestamp: new Date() };
       await firestoreService.addChatMessage(selectedPackage.id, errorModelMessage);
       setChatHistory([...newHistory, errorModelMessage]);
     } finally {
@@ -454,6 +485,7 @@ const App: React.FC = () => {
                     onNewPackage={handleNewPackage}
                     onSelectPackage={handleSelectPackage}
                     onLoadFromKey={handleLoadFromKey}
+                    onDeletePackage={handleDeleteRequest}
                     isLoading={isLoading}
                 />;
       case 'generating':
@@ -570,6 +602,16 @@ const App: React.FC = () => {
         title="Revert to this Version?"
         message={`Are you sure you want to revert to the state from "${checkpointToRevert?.message}"? Any changes made after this version will be overwritten in your current view.`}
         confirmText="Yes, Revert"
+        variant="warning"
+      />
+      <ConfirmationModal
+        isOpen={!!packageToDelete}
+        onClose={() => setPackageToDelete(null)}
+        onConfirm={handleConfirmDelete}
+        title="Delete Project?"
+        message={`Are you sure you want to permanently delete "${packageToDelete?.name}"? This action cannot be undone.`}
+        confirmText="Yes, Delete"
+        variant="danger"
       />
     </div>
   );

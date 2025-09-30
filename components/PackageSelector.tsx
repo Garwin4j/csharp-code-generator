@@ -1,9 +1,11 @@
+
 import React, { useState, useEffect } from 'react';
 import { Package } from '../types';
 
 interface PackageSelectorProps {
   packages: Package[];
   onSelect: (packageId: string) => void;
+  onDelete: (pkg: Package) => void;
   isLoading: boolean;
 }
 
@@ -73,7 +75,7 @@ const GeneratingPackageCard: React.FC<{ pkg: Package }> = ({ pkg }) => {
     );
 };
 
-const FailedPackageCard: React.FC<{ pkg: Package }> = ({ pkg }) => {
+const FailedPackageCard: React.FC<{ pkg: Package; onDelete: (pkg: Package) => void; }> = ({ pkg, onDelete }) => {
     return (
         <div className="bg-red-900/20 rounded-lg shadow-lg p-6 flex flex-col justify-between border border-red-500">
              <div>
@@ -86,17 +88,17 @@ const FailedPackageCard: React.FC<{ pkg: Package }> = ({ pkg }) => {
               <div className="mt-6">
                 <p className="text-xs text-gray-500">Failed at: {pkg.updatedAt.toLocaleString()}</p>
                 <button
-                  disabled
-                  className="w-full mt-2 bg-gray-700/50 text-gray-500 font-semibold py-2 px-4 rounded-md cursor-not-allowed"
+                  onClick={() => onDelete(pkg)}
+                  className="w-full mt-2 bg-red-800 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-md transition-colors"
                 >
-                  Failed
+                  Delete Project
                 </button>
               </div>
         </div>
     );
 };
 
-const PackageSelector: React.FC<PackageSelectorProps> = ({ packages, onSelect, isLoading }) => {
+const PackageSelector: React.FC<PackageSelectorProps> = ({ packages, onSelect, onDelete, isLoading }) => {
   return (
     <>
       {isLoading && packages.length === 0 ? (
@@ -113,7 +115,7 @@ const PackageSelector: React.FC<PackageSelectorProps> = ({ packages, onSelect, i
                 return <GeneratingPackageCard key={pkg.id} pkg={pkg} />;
             }
             if (pkg.status === 'failed') {
-                return <FailedPackageCard key={pkg.id} pkg={pkg} />;
+                return <FailedPackageCard key={pkg.id} pkg={pkg} onDelete={onDelete} />;
             }
             return (
                 <div key={pkg.id} className="bg-gray-800 rounded-lg shadow-lg p-6 flex flex-col justify-between border border-gray-700 hover:border-cyan-500 transition-all duration-300">
@@ -125,13 +127,25 @@ const PackageSelector: React.FC<PackageSelectorProps> = ({ packages, onSelect, i
                   </div>
                   <div className="mt-6">
                     <p className="text-xs text-gray-500">Last updated: {pkg.updatedAt.toLocaleString()}</p>
-                    <button
-                      onClick={() => onSelect(pkg.id)}
-                      disabled={!pkg.files}
-                      className="w-full mt-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-700/50 disabled:cursor-not-allowed disabled:text-gray-500 text-white font-semibold py-2 px-4 rounded-md transition-colors"
-                    >
-                      Open Project
-                    </button>
+                    <div className="flex items-center gap-2 mt-2">
+                        <button
+                            onClick={() => onSelect(pkg.id)}
+                            disabled={!pkg.files}
+                            className="w-full bg-gray-700 hover:bg-gray-600 disabled:bg-gray-700/50 disabled:cursor-not-allowed disabled:text-gray-500 text-white font-semibold py-2 px-4 rounded-md transition-colors"
+                        >
+                            Open Project
+                        </button>
+                        <button
+                            onClick={() => onDelete(pkg)}
+                            className="p-2 rounded-md bg-gray-700 hover:bg-red-600/80 text-gray-400 hover:text-white transition-colors"
+                            title="Delete Project"
+                            aria-label={`Delete project ${pkg.name}`}
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                            </svg>
+                        </button>
+                    </div>
                   </div>
                 </div>
             )

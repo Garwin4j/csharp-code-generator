@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { User as FirebaseUser } from 'firebase/auth';
 import { Package } from '../types';
@@ -10,6 +11,7 @@ interface HomeProps {
     onNewPackage: () => void;
     onLoadFromKey: (key: string) => void;
     onLogin: () => void;
+    onDeletePackage: (pkg: Package) => void;
     isLoading: boolean;
 }
 
@@ -72,7 +74,7 @@ const GuestHome: React.FC<{ onNewPackage: () => void; onLoadFromKey: (key: strin
     );
 }
 
-const LoggedInHome: React.FC<{ packages: Package[], onSelectPackage: (id: string) => void, onNewPackage: () => void, isLoading: boolean }> = ({ packages, onSelectPackage, onNewPackage, isLoading }) => {
+const LoggedInHome: React.FC<{ packages: Package[], onSelectPackage: (id: string) => void, onNewPackage: () => void, isLoading: boolean, onDeletePackage: (pkg: Package) => void }> = ({ packages, onSelectPackage, onNewPackage, isLoading, onDeletePackage }) => {
     return (
         <div className="container mx-auto p-4 lg:p-8">
             <div className="flex justify-between items-center mb-6">
@@ -84,7 +86,7 @@ const LoggedInHome: React.FC<{ packages: Package[], onSelectPackage: (id: string
                 + New Project
                 </button>
             </div>
-            <PackageSelector packages={packages} onSelect={onSelectPackage} isLoading={isLoading} />
+            <PackageSelector packages={packages} onSelect={onSelectPackage} onDelete={onDeletePackage} isLoading={isLoading} />
         </div>
     );
 };
@@ -96,6 +98,7 @@ const Home: React.FC<HomeProps> = (props) => {
                     packages={props.packages} 
                     onSelectPackage={props.onSelectPackage} 
                     onNewPackage={props.onNewPackage}
+                    onDeletePackage={props.onDeletePackage}
                     isLoading={props.isLoading}
                 />;
     }

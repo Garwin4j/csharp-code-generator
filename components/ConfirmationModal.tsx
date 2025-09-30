@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 interface ConfirmationModalProps {
@@ -8,6 +9,7 @@ interface ConfirmationModalProps {
   message: string;
   confirmText?: string;
   cancelText?: string;
+  variant?: 'warning' | 'danger';
 }
 
 const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ 
@@ -17,7 +19,8 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
     title, 
     message, 
     confirmText = 'Confirm', 
-    cancelText = 'Cancel' 
+    cancelText = 'Cancel',
+    variant = 'warning',
 }) => {
   if (!isOpen) return null;
 
@@ -25,6 +28,21 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
     onConfirm();
     onClose();
   }
+
+  const themes = {
+    warning: {
+      border: 'border-yellow-500',
+      title: 'text-yellow-400',
+      confirmButton: 'bg-yellow-600 hover:bg-yellow-700',
+    },
+    danger: {
+      border: 'border-red-500',
+      title: 'text-red-400',
+      confirmButton: 'bg-red-600 hover:bg-red-700',
+    }
+  };
+
+  const currentTheme = themes[variant];
 
   return (
     <div 
@@ -35,10 +53,10 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
         aria-labelledby="confirmation-title"
     >
       <div 
-        className="bg-gray-800 rounded-lg shadow-2xl p-8 border border-yellow-500 max-w-md w-full m-4" 
+        className={`bg-gray-800 rounded-lg shadow-2xl p-8 border ${currentTheme.border} max-w-md w-full m-4`} 
         onClick={e => e.stopPropagation()}
       >
-        <h2 id="confirmation-title" className="text-2xl font-bold text-yellow-400 mb-4">{title}</h2>
+        <h2 id="confirmation-title" className={`text-2xl font-bold ${currentTheme.title} mb-4`}>{title}</h2>
         <p className="text-gray-400 mb-6">{message}</p>
         <div className="flex justify-end gap-4">
           <button 
@@ -49,7 +67,7 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
           </button>
           <button 
             onClick={handleConfirm} 
-            className="bg-yellow-600 hover:bg-yellow-700 text-white font-semibold py-2 px-4 rounded-md transition-colors"
+            className={`${currentTheme.confirmButton} text-white font-semibold py-2 px-4 rounded-md transition-colors`}
           >
             {confirmText}
           </button>

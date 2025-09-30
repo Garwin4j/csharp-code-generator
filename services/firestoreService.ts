@@ -1,3 +1,4 @@
+
 import {
   collection,
   addDoc,
@@ -147,6 +148,32 @@ export const updatePackage = async (
     updatedAt: serverTimestamp(),
   });
 };
+
+export const deletePackage = async (packageId: string): Promise<void> => {
+    const batch = writeBatch(db);
+
+    // 1. Get all chat history documents to delete
+    const chatHistoryCollection = getChatHistoryCollection(packageId);
+    const chatHistorySnapshot = await getDocs(chatHistoryCollection);
+    chatHistorySnapshot.forEach(doc => {
+        batch.delete(doc.ref);
+    });
+
+    // 2. Get all checkpoint documents to delete
+    const checkpointsCollection = getCheckpointsCollection(packageId);
+    const checkpointsSnapshot = await getDocs(checkpointsCollection);
+    checkpointsSnapshot.forEach(doc => {
+        batch.delete(doc.ref);
+    });
+    
+    // 3. Delete the main package document
+    const packageDocRef = doc(db, 'packages', packageId);
+    batch.delete(packageDocRef);
+
+    // 4. Commit all delete operations
+    await batch.commit();
+};
+
 
 export const onUserPackagesSnapshot = (
     userId: string,
