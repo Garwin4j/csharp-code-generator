@@ -301,11 +301,9 @@ const App: React.FC = () => {
       // FIX: The 'err' from a catch block is of type 'unknown'. It must be checked
       // to safely access properties like 'message' and to be passed to functions
       // expecting a string, like setError.
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('An unknown error occurred while starting generation.');
-      }
+      // Refactored to match consistent error handling pattern used elsewhere in the component.
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred while starting generation.';
+      setError(errorMessage);
       setAppState('generating');
     } finally {
       setIsLoading(false);
@@ -329,6 +327,18 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
       setPackageToDelete(null);
+    }
+  };
+
+  const handleRenamePackage = async (packageId: string, newName: string) => {
+    if (!newName.trim()) return; // Prevent renaming to an empty string
+    try {
+      await firestoreService.renamePackage(packageId, newName);
+      // Firestore's onSnapshot listener will automatically update the local state.
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during rename.';
+      setError(errorMessage);
+      console.error("Failed to rename package:", errorMessage);
     }
   };
 
@@ -486,6 +496,7 @@ const App: React.FC = () => {
                     onSelectPackage={handleSelectPackage}
                     onLoadFromKey={handleLoadFromKey}
                     onDeletePackage={handleDeleteRequest}
+                    onRenamePackage={handleRenamePackage}
                     isLoading={isLoading}
                 />;
       case 'generating':

@@ -149,6 +149,17 @@ export const updatePackage = async (
   });
 };
 
+export const renamePackage = async (
+  packageId: string,
+  newName: string
+): Promise<void> => {
+  const packageDoc = doc(db, 'packages', packageId);
+  await updateDoc(packageDoc, {
+    name: newName,
+    updatedAt: serverTimestamp(),
+  });
+};
+
 export const deletePackage = async (packageId: string): Promise<void> => {
     const batch = writeBatch(db);
 

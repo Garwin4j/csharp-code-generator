@@ -1,13 +1,85 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Package } from '../types';
 
 interface PackageSelectorProps {
   packages: Package[];
   onSelect: (packageId: string) => void;
   onDelete: (pkg: Package) => void;
+  onRename: (packageId: string, newName: string) => void;
   isLoading: boolean;
 }
+
+interface EditableTitleProps {
+    pkg: Package;
+    isEditing: boolean;
+    onStartEdit: (pkg: Package) => void;
+    onCancelEdit: () => void;
+    onSave: (newName: string) => void;
+    className: string;
+}
+
+const EditableTitle: React.FC<EditableTitleProps> = ({ pkg, isEditing, onStartEdit, onCancelEdit, onSave, className }) => {
+    const [name, setName] = useState(pkg.name);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (isEditing) {
+            inputRef.current?.focus();
+            inputRef.current?.select();
+        }
+    }, [isEditing]);
+    
+    // Ensure input field updates if underlying package name changes from props
+    useEffect(() => {
+        setName(pkg.name);
+    }, [pkg.name]);
+
+    const handleSave = () => {
+        if (name.trim() && name.trim() !== pkg.name) {
+            onSave(name.trim());
+        }
+        onCancelEdit(); // This will exit edit mode
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            handleSave();
+        } else if (e.key === 'Escape') {
+            onCancelEdit();
+        }
+    };
+    
+    if (isEditing) {
+        return (
+            <input
+                ref={inputRef}
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onBlur={handleSave}
+                onKeyDown={handleKeyDown}
+                className="w-full bg-gray-700 text-white p-1 -m-1 rounded-md text-xl font-semibold focus:outline-none focus:ring-2 focus:ring-cyan-500"
+            />
+        );
+    }
+    
+    return (
+        <div className="flex items-center gap-2 group min-w-0" onClick={() => onStartEdit(pkg)}>
+            <h3 className={`${className} truncate cursor-pointer`}>{pkg.name}</h3>
+            <button 
+                className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity p-1 text-gray-400 hover:text-white"
+                aria-label={`Rename project ${pkg.name}`}
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" />
+                    <path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" />
+                </svg>
+            </button>
+        </div>
+    );
+};
 
 const formatDuration = (seconds: number) => {
     const minutes = Math.floor(seconds / 60);
@@ -15,7 +87,11 @@ const formatDuration = (seconds: number) => {
     return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
 };
 
-const GeneratingPackageCard: React.FC<{ pkg: Package; onDelete: (pkg: Package) => void; }> = ({ pkg, onDelete }) => {
+const GeneratingPackageCard: React.FC<{ 
+    pkg: Package; 
+    onDelete: (pkg: Package) => void; 
+    editableTitleProps: Omit<EditableTitleProps, 'pkg' | 'className'>
+}> = ({ pkg, onDelete, editableTitleProps }) => {
     const [elapsedTime, setElapsedTime] = useState(0);
 
     useEffect(() => {
@@ -52,7 +128,11 @@ const GeneratingPackageCard: React.FC<{ pkg: Package; onDelete: (pkg: Package) =
     return (
         <div className="bg-gray-800 rounded-lg shadow-lg p-6 flex flex-col justify-between border border-cyan-700 animate-pulse">
             <div>
-                <h3 className="text-xl font-semibold text-cyan-400 truncate">{pkg.name}</h3>
+                <EditableTitle
+                    pkg={pkg}
+                    {...editableTitleProps}
+                    className="text-xl font-semibold text-cyan-400"
+                />
                 <div className="mt-4 flex items-center text-sm text-cyan-300">
                      <svg className="animate-spin h-5 w-5 mr-3 text-cyan-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -87,11 +167,19 @@ const GeneratingPackageCard: React.FC<{ pkg: Package; onDelete: (pkg: Package) =
     );
 };
 
-const FailedPackageCard: React.FC<{ pkg: Package; onDelete: (pkg: Package) => void; }> = ({ pkg, onDelete }) => {
+const FailedPackageCard: React.FC<{ 
+    pkg: Package; 
+    onDelete: (pkg: Package) => void; 
+    editableTitleProps: Omit<EditableTitleProps, 'pkg' | 'className'>
+}> = ({ pkg, onDelete, editableTitleProps }) => {
     return (
         <div className="bg-red-900/20 rounded-lg shadow-lg p-6 flex flex-col justify-between border border-red-500">
              <div>
-                <h3 className="text-xl font-semibold text-red-300 truncate">{pkg.name}</h3>
+                <EditableTitle
+                    pkg={pkg}
+                    {...editableTitleProps}
+                    className="text-xl font-semibold text-red-300"
+                />
                 <p className="text-sm text-red-400 mt-2 font-bold">Generation Failed</p>
                 <p className="text-xs text-gray-300 mt-2 bg-gray-800/50 p-2 rounded font-mono line-clamp-3">
                   {pkg.error || 'An unknown error occurred.'}
@@ -110,7 +198,29 @@ const FailedPackageCard: React.FC<{ pkg: Package; onDelete: (pkg: Package) => vo
     );
 };
 
-const PackageSelector: React.FC<PackageSelectorProps> = ({ packages, onSelect, onDelete, isLoading }) => {
+const PackageSelector: React.FC<PackageSelectorProps> = ({ packages, onSelect, onDelete, onRename, isLoading }) => {
+  const [editingPackageId, setEditingPackageId] = useState<string | null>(null);
+
+  const handleStartEdit = (pkg: Package) => {
+      setEditingPackageId(pkg.id);
+  };
+
+  const handleCancelEdit = () => {
+      setEditingPackageId(null);
+  };
+
+  const handleSaveRename = (packageId: string, newName: string) => {
+      onRename(packageId, newName);
+      setEditingPackageId(null);
+  };
+  
+  const editableTitleProps = {
+    isEditing: false, // will be overridden per item
+    onStartEdit: handleStartEdit,
+    onCancelEdit: handleCancelEdit,
+    onSave: (newName: string) => {}, // will be overridden per item
+  };
+
   return (
     <>
       {isLoading && packages.length === 0 ? (
@@ -123,16 +233,26 @@ const PackageSelector: React.FC<PackageSelectorProps> = ({ packages, onSelect, o
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {packages.map((pkg) => {
+            const currentEditableTitleProps = {
+                ...editableTitleProps,
+                isEditing: editingPackageId === pkg.id,
+                onSave: (newName: string) => handleSaveRename(pkg.id, newName),
+            };
+
             if (pkg.status === 'generating') {
-                return <GeneratingPackageCard key={pkg.id} pkg={pkg} onDelete={onDelete} />;
+                return <GeneratingPackageCard key={pkg.id} pkg={pkg} onDelete={onDelete} editableTitleProps={currentEditableTitleProps} />;
             }
             if (pkg.status === 'failed') {
-                return <FailedPackageCard key={pkg.id} pkg={pkg} onDelete={onDelete} />;
+                return <FailedPackageCard key={pkg.id} pkg={pkg} onDelete={onDelete} editableTitleProps={currentEditableTitleProps} />;
             }
             return (
                 <div key={pkg.id} className="bg-gray-800 rounded-lg shadow-lg p-6 flex flex-col justify-between border border-gray-700 hover:border-cyan-500 transition-all duration-300">
                   <div>
-                    <h3 className="text-xl font-semibold text-cyan-400 truncate">{pkg.name}</h3>
+                    <EditableTitle
+                        pkg={pkg}
+                        {...currentEditableTitleProps}
+                        className="text-xl font-semibold text-cyan-400"
+                    />
                     <p className="text-sm text-gray-400 mt-2 line-clamp-3">
                       {pkg.initialRequirements}
                     </p>

@@ -12,6 +12,7 @@ interface HomeProps {
     onLoadFromKey: (key: string) => void;
     onLogin: () => void;
     onDeletePackage: (pkg: Package) => void;
+    onRenamePackage: (packageId: string, newName: string) => void;
     isLoading: boolean;
 }
 
@@ -74,7 +75,14 @@ const GuestHome: React.FC<{ onNewPackage: () => void; onLoadFromKey: (key: strin
     );
 }
 
-const LoggedInHome: React.FC<{ packages: Package[], onSelectPackage: (id: string) => void, onNewPackage: () => void, isLoading: boolean, onDeletePackage: (pkg: Package) => void }> = ({ packages, onSelectPackage, onNewPackage, isLoading, onDeletePackage }) => {
+const LoggedInHome: React.FC<{ 
+    packages: Package[], 
+    onSelectPackage: (id: string) => void, 
+    onNewPackage: () => void, 
+    isLoading: boolean, 
+    onDeletePackage: (pkg: Package) => void,
+    onRenamePackage: (packageId: string, newName: string) => void
+}> = ({ packages, onSelectPackage, onNewPackage, isLoading, onDeletePackage, onRenamePackage }) => {
     return (
         <div className="container mx-auto p-4 lg:p-8">
             <div className="flex justify-between items-center mb-6">
@@ -86,7 +94,13 @@ const LoggedInHome: React.FC<{ packages: Package[], onSelectPackage: (id: string
                 + New Project
                 </button>
             </div>
-            <PackageSelector packages={packages} onSelect={onSelectPackage} onDelete={onDeletePackage} isLoading={isLoading} />
+            <PackageSelector 
+                packages={packages} 
+                onSelect={onSelectPackage} 
+                onDelete={onDeletePackage} 
+                onRename={onRenamePackage}
+                isLoading={isLoading} 
+            />
         </div>
     );
 };
@@ -99,6 +113,7 @@ const Home: React.FC<HomeProps> = (props) => {
                     onSelectPackage={props.onSelectPackage} 
                     onNewPackage={props.onNewPackage}
                     onDeletePackage={props.onDeletePackage}
+                    onRenamePackage={props.onRenamePackage}
                     isLoading={props.isLoading}
                 />;
     }
