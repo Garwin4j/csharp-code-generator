@@ -439,7 +439,8 @@ const App: React.FC = () => {
       setChatHistory([...newHistory, modelMessage]);
 
     } catch (err) {
-      // FIX: Explicitly handle the 'unknown' type from the catch block to ensure a string is always passed to setError.
+      // Fix for: Argument of type 'unknown' is not assignable to parameter of type 'string'.
+      // The 'err' object from a catch block is of type 'unknown' and must be type-checked before use.
       let errorMessage = 'An unknown error occurred.';
       if (err instanceof Error) {
         errorMessage = err.message;
