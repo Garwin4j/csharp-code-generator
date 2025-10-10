@@ -99,13 +99,15 @@ export async function generateCode(
 
   try {
     const responseStream = await ai.models.generateContentStream({
-        model: "gemini-2.5-flash",
+        model: "gemini-2.5-pro",
         contents: prompt,
         config: {
+            maxOutputTokens: 1048576,
             responseMimeType: "application/json",
             responseSchema: JSON_RESPONSE_SCHEMA,
             // Low thinking budget to encourage faster streaming of initial files
-            thinkingConfig: { thinkingBudget: 100 }, 
+            thinkingConfig: { thinkingBudget: 1000 },
+
         },
     });
 
