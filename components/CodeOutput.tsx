@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GeneratedFile, Package, Checkpoint } from '../types';
 import FileTree from './FileTree';
@@ -118,6 +119,30 @@ const CodeOutput: React.FC<CodeOutputProps> = ({ selectedPackage, checkpoints, g
       console.error('Failed to create zip file', err);
     }
   };
+  
+  const handleDownloadJson = () => {
+    if (!generatedCode || generatedCode.length === 0 || !selectedPackage) return;
+    
+    const jsonData = {
+      projectName: selectedPackage.name,
+      initialRequirements: selectedPackage.initialRequirements,
+      files: generatedCode,
+    };
+
+    const jsonString = JSON.stringify(jsonData, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    
+    const projectName = selectedPackage.name.replace(/[^a-zA-Z0-9-]/g, '_').replace(/_+/g, '_');
+    const fileName = `${projectName}_files.json`;
+
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+  };
 
   const renderContent = () => {
     if (isLoading) {
@@ -201,16 +226,29 @@ const CodeOutput: React.FC<CodeOutputProps> = ({ selectedPackage, checkpoints, g
               <p className="text-sm text-gray-400">Browse, edit, and download your project files.</p>
             </div>
         </div>
-        <button
-          onClick={handleDownloadZip}
-          disabled={!generatedCode || generatedCode.length === 0 || isLoading}
-          className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-700/50 disabled:cursor-not-allowed disabled:text-gray-500 text-gray-200 font-semibold py-2 px-4 rounded-md transition-colors"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
-          </svg>
-          Download .zip
-        </button>
+        <div className="flex items-center gap-2">
+            <button
+                onClick={handleDownloadJson}
+                disabled={!generatedCode || generatedCode.length === 0 || isLoading}
+                className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-700/50 disabled:cursor-not-allowed disabled:text-gray-500 text-gray-200 font-semibold py-2 px-4 rounded-md transition-colors"
+                title="Download project state as a JSON file"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                </svg>
+                JSON
+            </button>
+            <button
+            onClick={handleDownloadZip}
+            disabled={!generatedCode || generatedCode.length === 0 || isLoading}
+            className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-700/50 disabled:cursor-not-allowed disabled:text-gray-500 text-gray-200 font-semibold py-2 px-4 rounded-md transition-colors"
+            >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+            .ZIP
+            </button>
+        </div>
       </div>
       <div className="flex-grow overflow-hidden min-h-0">
         {renderContent()}

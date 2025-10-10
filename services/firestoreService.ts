@@ -75,6 +75,54 @@ export const createPackageForGeneration = async (
   };
 };
 
+export const createPackageFromJson = async (
+  data: { projectName: string, initialRequirements?: string, files: GeneratedFile[] },
+  userId?: string
+): Promise<Package> => {
+  const batch = writeBatch(db);
+  const packageDocRef = doc(packagesCollection); // auto-generate id
+
+  const newPackageData: any = {
+    name: data.projectName,
+    initialRequirements: data.initialRequirements || 'Project created from JSON file.',
+    files: data.files,
+    status: 'completed' as const,
+    error: '',
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  if (userId) {
+    newPackageData.userId = userId;
+  }
+  
+  batch.set(packageDocRef, newPackageData);
+  
+  const checkpointsCollectionRef = getCheckpointsCollection(packageDocRef.id);
+  const checkpointDocRef = doc(checkpointsCollectionRef);
+  batch.set(checkpointDocRef, {
+      message: 'Initial Version from JSON',
+      files: data.files,
+      createdAt: serverTimestamp(),
+  });
+
+  await batch.commit();
+
+  const now = new Date();
+  const createdPackage: Package = {
+      id: packageDocRef.id,
+      userId: userId,
+      name: data.projectName,
+      initialRequirements: data.initialRequirements || 'Project created from JSON file.',
+      files: data.files,
+      createdAt: now,
+      updatedAt: now,
+      status: 'completed',
+  };
+
+  return createdPackage;
+};
+
 export const updatePackageGenerationProgress = async (
   packageId: string,
   progressLog: string

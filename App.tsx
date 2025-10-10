@@ -1,10 +1,9 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut, User as FirebaseUser, signInWithPopup } from 'firebase/auth';
 import { auth, googleProvider } from './firebaseConfig';
 import { GeneratedFile, ChatMessage, Package, FilePatch, Checkpoint } from './types';
-import { generateCode, refineCode } from './services/geminiService';
+import * as geminiService from './services/geminiService';
 import * as firestoreService from './services/firestoreService';
 import { INITIAL_REQUIREMENTS } from './constants';
 
@@ -83,36 +82,25 @@ const calculateLineDiff = (oldText: string, newText: string): Set<number> => {
 
 
 const applyCodePatch = (currentCode: GeneratedFile[], patch: FilePatch[]): GeneratedFile[] => {
-  let newCode = [...currentCode];
+  // Create a Map for efficient, immutable-style updates.
+  const filesMap = new Map(currentCode.map(file => [file.path, file]));
 
   patch.forEach(operation => {
-    const fileIndex = newCode.findIndex(f => f.path === operation.path);
-    const fileExists = fileIndex !== -1;
-
     switch (operation.op) {
       case 'add':
-        if (fileExists) {
-          newCode[fileIndex].content = operation.content;
-        } else {
-          newCode.push({ path: operation.path, content: operation.content });
-        }
-        break;
       case 'update':
-        if (fileExists) {
-          newCode[fileIndex].content = operation.content;
-        } else {
-          newCode.push({ path: operation.path, content: operation.content });
-        }
+        // Add or replace the file in the map with a brand new object.
+        filesMap.set(operation.path, { path: operation.path, content: operation.content });
         break;
       case 'delete':
-        if (fileExists) {
-          newCode.splice(fileIndex, 1);
-        }
+        // Remove the file from the map.
+        filesMap.delete(operation.path);
         break;
     }
   });
 
-  return newCode;
+  // Convert the map of new/updated files back to an array.
+  return Array.from(filesMap.values());
 };
 
 const findChangedFiles = (oldFiles: GeneratedFile[], newFiles: GeneratedFile[]): Set<string> => {
@@ -147,6 +135,7 @@ const App: React.FC = () => {
   const [fileDiffs, setFileDiffs] = useState<Map<string, Set<number>>>(new Map());
   
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isGeneratingDocs, setIsGeneratingDocs] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [thinkingProgress, setThinkingProgress] = useState<string>('');
   const [isThinkingPanelOpen, setIsThinkingPanelOpen] = useState<boolean>(false);
@@ -295,7 +284,7 @@ const App: React.FC = () => {
       setAppState('chat'); // Go directly to chat/generation view
   
       // Fire-and-forget background generation
-      generateCode(newPackage.id, requirements);
+      geminiService.generateCode(newPackage.id, requirements);
   
     } catch (err) {
       // The 'err' object from a catch block is of type 'unknown'.
@@ -307,6 +296,38 @@ const App: React.FC = () => {
       setIsLoading(false);
     }
   };
+
+  const handleCreateProjectFromJSON = async (jsonContent: string) => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+        const data = JSON.parse(jsonContent);
+
+        if (!data.files || !Array.isArray(data.files) || !data.projectName) {
+            throw new Error('Invalid JSON format. Must contain "projectName" and a "files" array.');
+        }
+
+        const newPackage = await firestoreService.createPackageFromJson(data, user?.uid);
+        
+        setSelectedPackage(newPackage);
+        setGeneratedCode(newPackage.files);
+        setChangedFilePaths(new Set()); 
+        setFileDiffs(new Map());
+        setChatHistory([]); // New project from JSON has no chat history.
+        const packageCheckpoints = await firestoreService.getCheckpoints(newPackage.id);
+        setCheckpoints(packageCheckpoints);
+        setAppState('chat');
+
+    } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to parse or create project from JSON.';
+        setError(errorMessage);
+        setAppState('generating'); // Stay on the same page to show error
+    } finally {
+        setIsLoading(false);
+    }
+  };
+
 
   const handleDeleteRequest = (pkg: Package) => {
     setPackageToDelete(pkg);
@@ -410,7 +431,7 @@ const App: React.FC = () => {
       setCheckpoints(updatedCheckpoints);
       
       const oldCode = [...generatedCode]; // Capture old state for diffing
-      const patch = await refineCode(message, generatedCode, setThinkingProgress, images);
+      const patch = await geminiService.refineCode(message, generatedCode, setThinkingProgress, images);
       const updatedCode = applyCodePatch(generatedCode, patch);
 
       // Calculate diffs for changed files
@@ -439,8 +460,7 @@ const App: React.FC = () => {
       setChatHistory([...newHistory, modelMessage]);
 
     } catch (err) {
-      // Fix for: Argument of type 'unknown' is not assignable to parameter of type 'string'.
-      // The 'err' object from a catch block is of type 'unknown' and must be type-checked before use.
+      // FIX: The 'err' object from a catch block is of type 'unknown'. Safely handle it by checking if it's an instance of Error before using its properties.
       let errorMessage = 'An unknown error occurred.';
       if (err instanceof Error) {
         errorMessage = err.message;
@@ -454,6 +474,36 @@ const App: React.FC = () => {
       setIsLoading(false);
     }
   };
+  
+  const handleDownloadDetailedDocs = async () => {
+    if (!selectedPackage?.files || isGeneratingDocs) return;
+
+    setIsGeneratingDocs(true);
+    setError(null);
+
+    try {
+        const markdownContent = await geminiService.generateDetailedDocumentation(
+            selectedPackage.name,
+            selectedPackage.files,
+        );
+        const blob = new Blob([markdownContent], { type: 'text/markdown;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        const projectName = selectedPackage.name.replace(/[^a-zA-Z0-9-]/g, '_').replace(/_+/g, '_');
+        link.download = `${projectName}_Detailed_Docs.md`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+    } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to generate detailed documentation.';
+        setError(errorMessage);
+        // This error will be displayed in the CodeOutput panel
+    } finally {
+        setIsGeneratingDocs(false);
+    }
+  };
+
 
   const handleSaveFile = async (path: string, content: string) => {
     if (!generatedCode || !selectedPackage) return;
@@ -511,6 +561,7 @@ const App: React.FC = () => {
                 value={requirements}
                 onChange={(e) => setRequirements(e.target.value)}
                 onGenerate={handleGenerateCode}
+                onGenerateFromJSON={handleCreateProjectFromJSON}
                 isLoading={isLoading}
                 onBack={handleGoHome}
               />
@@ -527,6 +578,8 @@ const App: React.FC = () => {
                 isThinkingPanelOpen={isThinkingPanelOpen}
                 onToggleThinkingPanel={() => setIsThinkingPanelOpen(!isThinkingPanelOpen)}
                 projectName={selectedPackage?.name || ''}
+                onDownloadDetailedDocs={handleDownloadDetailedDocs}
+                isGeneratingDocs={isGeneratingDocs}
               />
             )}
           </div>

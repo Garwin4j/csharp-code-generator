@@ -1,5 +1,4 @@
 
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { GeneratedFile, FilePatch, ChatMessage } from '../types';
 import * as firestoreService from './firestoreService';
@@ -99,15 +98,13 @@ export async function generateCode(
 
   try {
     const responseStream = await ai.models.generateContentStream({
-        model: "gemini-2.5-pro",
+        model: "gemini-2.5-flash",
         contents: prompt,
         config: {
-            maxOutputTokens: 1048576,
             responseMimeType: "application/json",
             responseSchema: JSON_RESPONSE_SCHEMA,
             // Low thinking budget to encourage faster streaming of initial files
-            thinkingConfig: { thinkingBudget: 1000 },
-
+            thinkingConfig: { thinkingBudget: 100 }, 
         },
     });
 
@@ -285,5 +282,50 @@ export async function consolidateRequirements(
     } catch (error) {
         console.error("Error consolidating requirements:", error);
         throw new Error("Failed to generate the consolidated requirements document.");
+    }
+}
+
+export async function generateDetailedDocumentation(
+    projectName: string,
+    files: GeneratedFile[]
+): Promise<string> {
+    const prompt = `
+    You are an expert senior software architect and technical writer. Your task is to generate a comprehensive and detailed requirements document in Markdown format for an existing C# codebase.
+
+    You will be provided with the project name and a JSON object containing an array of all the files in the project, including their paths and content.
+
+    Analyze the entire codebase to understand its structure, functionality, and the role of each file. Then, produce a single, well-structured Markdown document that serves as a detailed technical specification.
+
+    The document should include:
+    1.  **A main title** for the project.
+    2.  **An overview section** that describes the project's overall architecture (e.g., Clean Architecture), purpose, and key technologies used.
+    3.  **A "File Breakdown" section.** Under this, for EACH file provided, create a subsection with:
+        - The full file path as a heading.
+        - A clear and concise description of the file's purpose and its responsibilities within the application.
+        - An explanation of key classes, methods, properties, or logic contained within the file.
+
+    Adhere to the following rules:
+    - Your entire output MUST be only the final Markdown document.
+    - Do not include any conversational text, introductions, or explanations like "Here is the documentation:".
+    - Use appropriate Markdown formatting (headings, lists, code blocks for snippets if necessary) to create a clean and readable document.
+
+    ---
+    PROJECT NAME:
+    ${projectName}
+    ---
+    PROJECT FILES (JSON):
+    ${JSON.stringify(files, null, 2)}
+    ---
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+        });
+        return response.text;
+    } catch (error) {
+        console.error("Error generating detailed documentation:", error);
+        throw new Error("Failed to generate the detailed documentation.");
     }
 }

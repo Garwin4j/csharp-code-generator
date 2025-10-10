@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -18,6 +19,8 @@ interface ChatInterfaceProps {
   isThinkingPanelOpen: boolean;
   onToggleThinkingPanel: () => void;
   projectName: string;
+  onDownloadDetailedDocs: () => void;
+  isGeneratingDocs: boolean;
 }
 
 const ChatInterface: React.FC<ChatInterfaceProps> = ({ 
@@ -32,6 +35,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     isThinkingPanelOpen,
     onToggleThinkingPanel,
     projectName,
+    onDownloadDetailedDocs,
+    isGeneratingDocs,
 }) => {
   const [message, setMessage] = useState('');
   const [images, setImages] = useState<{ file: File; previewUrl: string; base64: string; mimeType: string }[]>([]);
@@ -93,7 +98,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if ((message.trim() || images.length > 0) && !isLoading) {
+    if ((message.trim() || images.length > 0) && !isLoading && !isGeneratingDocs) {
       const imagesToSend = images.map(img => ({
         mimeType: img.mimeType,
         data: img.base64,
@@ -150,7 +155,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         <div className="flex items-center gap-2">
             <button
               onClick={handleDownloadPrompt}
-              disabled={isConsolidating || isLoading}
+              disabled={isConsolidating || isLoading || isGeneratingDocs}
               className="text-sm bg-gray-700 hover:bg-gray-600 text-gray-300 font-semibold py-2 px-4 rounded-md transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isConsolidating ? (
@@ -167,6 +172,29 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
                   </svg>
                   <span>Download Prompt</span>
+                </>
+              )}
+            </button>
+             <button
+              onClick={onDownloadDetailedDocs}
+              disabled={isGeneratingDocs || isLoading || isConsolidating}
+              className="text-sm bg-gray-700 hover:bg-gray-600 text-gray-300 font-semibold py-2 px-4 rounded-md transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isGeneratingDocs ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span>Generating...</span>
+                </>
+              ) : (
+                <>
+                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
+                    <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
+                  </svg>
+                  <span>Download Docs</span>
                 </>
               )}
             </button>
@@ -278,7 +306,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                         placeholder="e.g., 'Add a Description property to the User entity.'"
                         className="flex-grow p-2 bg-transparent text-gray-300 w-full resize-none focus:outline-none font-sans text-sm"
                         rows={3}
-                        disabled={isLoading}
+                        disabled={isLoading || isGeneratingDocs}
                         aria-label="Chat input for code refinement"
                       />
                   ) : (
@@ -288,14 +316,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   )}
 
                   <input type="file" ref={fileInputRef} onChange={handleImageSelect} multiple accept="image/*" className="hidden" />
-                  <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isLoading} className="p-2 rounded-md text-gray-400 hover:text-white hover:bg-gray-700/50 transition-colors disabled:opacity-50">
+                  <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isLoading || isGeneratingDocs} className="p-2 rounded-md text-gray-400 hover:text-white hover:bg-gray-700/50 transition-colors disabled:opacity-50">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                     </svg>
                   </button>
                   <button
                     type="submit"
-                    disabled={isLoading || (!message.trim() && images.length === 0)}
+                    disabled={isLoading || isGeneratingDocs || (!message.trim() && images.length === 0)}
                     className="bg-cyan-600 hover:bg-cyan-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-bold p-3 rounded-md transition-all duration-300 ease-in-out flex items-center justify-center self-end"
                     aria-label="Send message"
                   >
