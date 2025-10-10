@@ -194,6 +194,7 @@ export async function refineCode(
     IMPORTANT RULES:
     - Only return the patch. DO NOT return the full, modified codebase.
     - If a file is not changed, it should NOT appear in the patch.
+    - When updating an existing file, you MUST incorporate the user's requested changes while preserving all previous, unaffected code. The provided codebase reflects all prior modifications. Your changes should be incremental. Do not regenerate files from scratch.
     - For "add" and "update", the "content" field MUST contain the complete, new source code for that file, with proper formatting and escaped newlines (\\n).
     - Do NOT include markdown formatting like \`\`\`csharp. The content should be pure source code.
 
