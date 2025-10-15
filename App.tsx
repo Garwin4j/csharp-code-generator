@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut, User as FirebaseUser, signInWithPopup } from 'firebase/auth';
 import { auth, googleProvider } from './firebaseConfig';
@@ -340,6 +341,8 @@ const App: React.FC = () => {
       await firestoreService.deletePackage(packageToDelete.id);
       // The onSnapshot listener will automatically refresh the package list.
     } catch (err) {
+      // FIX: The 'err' object from a catch block is of type 'unknown'.
+      // Safely handle it by checking if it's an instance of Error before using its message property.
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during deletion.';
       setError(errorMessage); // This error could be shown in a toast/notification
       console.error("Failed to delete package:", errorMessage);

@@ -133,7 +133,15 @@ const CodeOutput: React.FC<CodeOutputProps> = ({ selectedPackage, checkpoints, g
     const blob = new Blob([jsonString], { type: 'application/json' });
     
     const projectName = selectedPackage.name.replace(/[^a-zA-Z0-9-]/g, '_').replace(/_+/g, '_');
-    const fileName = `${projectName}_files.json`;
+    const revisionNumber = checkpoints.length;
+    
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    const dateString = `${year}-${month}-${day}`;
+    
+    const fileName = `${projectName}_${revisionNumber}_${dateString}_files.json`;
 
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
