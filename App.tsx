@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut, User as FirebaseUser, signInWithPopup } from 'firebase/auth';
 import { auth, googleProvider } from './firebaseConfig';
@@ -271,7 +272,7 @@ const App: React.FC = () => {
     setAppState('home');
   };
 
-  const handleGenerateCode = async () => {
+  const handleGenerateCode = async (baseFiles: GeneratedFile[] | null) => {
     if (!requirements.trim()) return;
     setIsLoading(true);
     setError(null);
@@ -285,7 +286,7 @@ const App: React.FC = () => {
       setAppState('chat'); // Go directly to chat/generation view
   
       // Fire-and-forget background generation
-      geminiService.generateCode(newPackage.id, requirements);
+      geminiService.generateCode(newPackage.id, requirements, baseFiles);
   
     } catch (err) {
       // The 'err' object from a catch block is of type 'unknown'.
@@ -464,10 +465,7 @@ const App: React.FC = () => {
 
     } catch (err) {
       // FIX: The 'err' object from a catch block is of type 'unknown'. Safely handle it by checking if it's an instance of Error before using its properties.
-      let errorMessage = 'An unknown error occurred.';
-      if (err instanceof Error) {
-        errorMessage = err.message;
-      }
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
       setError(errorMessage);
       setChangedFilePaths(new Set()); // Clear highlights on error
       const errorModelMessage: ChatMessage = { role: 'model', content: `I encountered an error trying to process that: ${errorMessage}`, timestamp: new Date(), images: [] };

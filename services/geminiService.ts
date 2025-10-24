@@ -1,4 +1,5 @@
 
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { GeneratedFile, FilePatch, ChatMessage } from '../types';
 import * as firestoreService from './firestoreService';
@@ -70,8 +71,53 @@ const parsePatchJsonResponse = (jsonString: string): FilePatch[] => {
 export async function generateCode(
   packageId: string,
   requirements: string,
+  baseFiles: GeneratedFile[] | null
 ): Promise<void> {
-  const prompt = `
+  let prompt: string;
+
+  if (baseFiles && baseFiles.length > 0) {
+    prompt = `
+    You are an expert C# .NET architect specializing in Clean Architecture.
+    Your task is to generate a complete C# codebase based on a user's requirements.
+
+    You have been provided with a set of existing files to use as a starting point. Your goal is to intelligently integrate these files with the user's requirements to produce a final, coherent codebase.
+
+    Follow these steps:
+    1.  Analyze the user's requirements thoroughly.
+    2.  Review the provided existing files (their paths and content).
+    3.  Compare the existing files against the requirements.
+    4.  **Decision Making:**
+        - If an existing file perfectly matches a requirement, **keep it as is**.
+        - If an existing file is close but needs modifications (e.g., adding a property, changing logic), **update its content accordingly**.
+        - If an existing file is no longer needed or is incorrect according to the requirements, **discard it** (do not include it in your final output).
+        - If a file is required but does not exist in the provided files, **generate it from scratch**.
+    5.  Ensure the final result is a complete, runnable solution that meets all requirements.
+
+    The output MUST be a single, valid JSON object. This JSON object must be an array of objects.
+    Each object in the array represents a file and must have two keys:
+    1. "path": A string for the full file path (e.g., 'Pd.Starter.Domain/Entities/User.cs').
+    2. "content": A string containing the full source code for that file.
+
+    IMPORTANT FORMATTING RULES for the "content" field:
+    - The code within the "content" string MUST be properly formatted with correct indentation and newlines (\\n).
+    - It should be human-readable as if you were viewing it in a text editor.
+    - Ensure all files necessary files are generated. Recheck that cs, sln, csproj, etc. are create as intended.
+    - Do NOT return the code as a single-line string. It must contain escaped newlines for JSON compatibility.
+    - Do NOT include any markdown formatting like \`\`\`csharp in the code content itself. The content should be pure source code.
+
+    Adhere strictly to all specified project names, namespaces, dependencies, and architectural patterns mentioned in the requirements.
+    Ensure the generated code is complete, valid, and follows C# best practices.
+
+    ---
+    USER REQUIREMENTS:
+    ${requirements}
+    ---
+    EXISTING FILES (JSON):
+    ${JSON.stringify(baseFiles, null, 2)}
+    ---
+  `;
+  } else {
+    prompt = `
     You are an expert C# .NET architect specializing in Clean Architecture.
     Generate a complete C# codebase for a .NET 10.0 solution based on the following requirements.
     
@@ -95,6 +141,7 @@ export async function generateCode(
     ${requirements}
     ---
   `;
+  }
 
   try {
     const responseStream = await ai.models.generateContentStream({

@@ -1,12 +1,15 @@
 
+
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { GeneratedFile } from '../types';
+import JSZip from 'jszip';
 
 interface RequirementInputProps {
   value: string;
   onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
-  onGenerate: () => void;
+  onGenerate: (baseFiles: GeneratedFile[] | null) => void;
   onGenerateFromJSON: (jsonContent: string) => void;
   isLoading: boolean;
   onBack: () => void;
@@ -16,6 +19,8 @@ const RequirementInput: React.FC<RequirementInputProps> = ({ value, onChange, on
   const [creationMode, setCreationMode] = useState<'scratch' | 'json'>('scratch');
   const [writeTab, setWriteTab] = useState<'write' | 'preview'>('write');
   const [uploadedJson, setUploadedJson] = useState<{name: string, content: string} | null>(null);
+  const [baseFiles, setBaseFiles] = useState<GeneratedFile[] | null>(null);
+  const [uploadedZipName, setUploadedZipName] = useState<string | null>(null);
 
   const creationTabClasses = (isActive: boolean) =>
     `px-4 py-3 text-sm font-semibold focus:outline-none transition-colors duration-200 flex-grow text-center ${
@@ -45,11 +50,49 @@ const RequirementInput: React.FC<RequirementInputProps> = ({ value, onChange, on
         alert('Please select a valid JSON file.');
     }
   };
+
+  const handleZipFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && (file.type === 'application/zip' || file.type === 'application/x-zip-compressed')) {
+        try {
+            const zip = await JSZip.loadAsync(file);
+            const filePromises: Promise<GeneratedFile>[] = [];
+            zip.forEach((_, zipEntry) => {
+                if (!zipEntry.dir) {
+                    const filePromise = zipEntry.async('string').then(content => ({
+                        path: zipEntry.name,
+                        content: content
+                    }));
+                    filePromises.push(filePromise);
+                }
+            });
+            const extractedFiles = await Promise.all(filePromises);
+            setBaseFiles(extractedFiles);
+            setUploadedZipName(file.name);
+        } catch (error) {
+            console.error("Error reading zip file:", error);
+            alert("Failed to process ZIP file. It might be corrupted.");
+            setBaseFiles(null);
+            setUploadedZipName(null);
+        }
+    } else {
+        setBaseFiles(null);
+        setUploadedZipName(null);
+        if(file) alert('Please select a valid ZIP file.');
+    }
+    // Reset file input value to allow re-uploading the same file
+    if(e.target) e.target.value = '';
+  };
+
+  const handleClearZip = () => {
+    setBaseFiles(null);
+    setUploadedZipName(null);
+  };
   
   const handleGenerate = () => {
     if (isLoading) return;
     if (creationMode === 'scratch') {
-      onGenerate();
+      onGenerate(baseFiles);
     } else if (uploadedJson) {
       onGenerateFromJSON(uploadedJson.content);
     }
@@ -75,7 +118,7 @@ const RequirementInput: React.FC<RequirementInputProps> = ({ value, onChange, on
       </div>
 
       {creationMode === 'scratch' ? (
-        <>
+        <div className="flex flex-col flex-grow min-h-0">
           <div className="flex border-b border-gray-700 bg-gray-800">
             <button
               onClick={() => setWriteTab('write')}
@@ -93,21 +136,52 @@ const RequirementInput: React.FC<RequirementInputProps> = ({ value, onChange, on
             </button>
           </div>
 
-          {writeTab === 'write' ? (
-            <textarea
-              value={value}
-              onChange={onChange}
-              placeholder="Paste your C# project requirements here..."
-              className="flex-grow p-4 bg-gray-900 text-gray-300 w-full resize-none focus:outline-none focus:ring-2 focus:ring-cyan-500 font-mono text-sm"
-              spellCheck="false"
-              aria-label="Project requirements editor"
-            />
-          ) : (
-            <div className="flex-grow p-4 bg-gray-900 text-gray-300 w-full overflow-y-auto prose-styles" aria-label="Project requirements preview">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{value}</ReactMarkdown>
-            </div>
-          )}
-        </>
+          <div className="flex-grow flex flex-col min-h-0">
+            {writeTab === 'write' ? (
+              <textarea
+                value={value}
+                onChange={onChange}
+                placeholder="Paste your C# project requirements here..."
+                className="flex-grow p-4 bg-gray-900 text-gray-300 w-full resize-none focus:outline-none focus:ring-2 focus:ring-cyan-500 font-mono text-sm"
+                spellCheck="false"
+                aria-label="Project requirements editor"
+              />
+            ) : (
+              <div className="flex-grow p-4 bg-gray-900 text-gray-300 w-full overflow-y-auto prose-styles" aria-label="Project requirements preview">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{value}</ReactMarkdown>
+              </div>
+            )}
+          </div>
+          <div className="p-4 bg-gray-800 border-t border-b border-gray-700">
+            <label htmlFor="zip-upload" className="text-sm font-medium text-gray-300">
+              Base Project (Optional .zip)
+            </label>
+            <p className="text-xs text-gray-500 mb-2">
+              Upload a ZIP file as a starting point. The AI will modify it based on your requirements.
+            </p>
+            {!uploadedZipName ? (
+              <label
+                htmlFor="zip-upload-input"
+                className="w-full flex justify-center px-6 py-3 border-2 border-dashed border-gray-600 rounded-md cursor-pointer hover:border-cyan-500 transition-colors"
+              >
+                <span className="text-sm text-gray-400">Click to select a ZIP file</span>
+                <input id="zip-upload-input" type="file" accept=".zip,application/zip,application/x-zip-compressed" className="hidden" onChange={handleZipFileChange} />
+              </label>
+            ) : (
+              <div className="w-full flex items-center justify-between p-3 bg-gray-900 rounded-md">
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
+                  </svg>
+                  <span className="text-sm text-cyan-400 truncate" title={uploadedZipName}>{uploadedZipName}</span>
+                </div>
+                <button onClick={handleClearZip} className="text-sm text-gray-400 hover:text-red-400 font-semibold transition-colors">
+                  Clear
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       ) : (
         <div className="flex-grow p-8 flex flex-col items-center justify-center bg-gray-900 text-center">
             <div className="w-full max-w-lg">
