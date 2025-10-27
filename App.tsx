@@ -1,6 +1,5 @@
 
 
-
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut, User as FirebaseUser, signInWithPopup } from 'firebase/auth';
 import { auth, googleProvider } from './firebaseConfig';
@@ -159,7 +158,7 @@ const App: React.FC = () => {
     if (updatedPackage && updatedPackage.updatedAt > selectedPackage.updatedAt) {
       setSelectedPackage(updatedPackage);
       if (updatedPackage.files) {
-        setGeneratedCode(updatedPackage.files);
+        setGeneratedCode(updated287Package.files);
       }
     }
   }, [packages, selectedPackage]);
@@ -289,9 +288,9 @@ const App: React.FC = () => {
       geminiService.generateCode(newPackage.id, requirements, baseFiles);
   
     } catch (err) {
-      // The 'err' object from a catch block is of type 'unknown'.
-      // This ensures we safely handle it before setting the state.
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred while starting generation.';
+      // FIX: Added explicit type annotation to `errorMessage` to resolve potential type inference issues
+      // with the `unknown` type in catch blocks, ensuring it's treated as a `string` when passed to `setError`.
+      const errorMessage: string = err instanceof Error ? err.message : 'An unknown error occurred while starting generation.';
       setError(errorMessage);
       setAppState('generating');
     } finally {
@@ -322,7 +321,9 @@ const App: React.FC = () => {
         setAppState('chat');
 
     } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'Failed to parse or create project from JSON.';
+        // FIX: Added explicit type annotation to `errorMessage` to resolve potential type inference issues
+        // with the `unknown` type in catch blocks, ensuring it's treated as a `string` when passed to `setError`.
+        const errorMessage: string = err instanceof Error ? err.message : 'Failed to parse or create project from JSON.';
         setError(errorMessage);
         setAppState('generating'); // Stay on the same page to show error
     } finally {
@@ -342,9 +343,9 @@ const App: React.FC = () => {
       await firestoreService.deletePackage(packageToDelete.id);
       // The onSnapshot listener will automatically refresh the package list.
     } catch (err) {
-      // FIX: The 'err' object from a catch block is of type 'unknown'.
-      // Safely handle it by checking if it's an instance of Error before using its message property.
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during deletion.';
+      // FIX: Added explicit type annotation to `errorMessage` to resolve potential type inference issues
+      // with the `unknown` type in catch blocks, ensuring it's treated as a `string` when passed to `setError`.
+      const errorMessage: string = err instanceof Error ? err.message : 'An unknown error occurred during deletion.';
       setError(errorMessage); // This error could be shown in a toast/notification
       console.error("Failed to delete package:", errorMessage);
     } finally {
@@ -359,7 +360,10 @@ const App: React.FC = () => {
       await firestoreService.renamePackage(packageId, newName);
       // Firestore's onSnapshot listener will automatically update the local state.
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during rename.';
+      // FIX: The error "Argument of type 'unknown' is not assignable to parameter of type 'string'" 
+      // is addressed by explicitly typing `errorMessage` as `string` when derived from an `unknown` error object.
+      // This ensures type compatibility when `errorMessage` is passed to functions expecting a string.
+      const errorMessage: string = err instanceof Error ? err.message : 'An unknown error occurred during rename.';
       setError(errorMessage);
       console.error("Failed to rename package:", errorMessage);
     }
@@ -405,7 +409,9 @@ const App: React.FC = () => {
           setChatHistory(prev => [...prev, revertMessage]);
 
       } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during revert.';
+          // FIX: Added explicit type annotation to `errorMessage` to resolve potential type inference issues
+          // with the `unknown` type in catch blocks, ensuring it's treated as a `string` when passed to `setError`.
+          const errorMessage: string = err instanceof Error ? err.message : 'An unknown error occurred during revert.';
           setError(errorMessage);
           const errorModelMessage: ChatMessage = { role: 'model', content: `I encountered an error trying to revert: ${errorMessage}`, timestamp: new Date(), images: [] };
           setChatHistory(prev => [...prev, errorModelMessage]);
@@ -464,8 +470,9 @@ const App: React.FC = () => {
       setChatHistory([...newHistory, modelMessage]);
 
     } catch (err) {
-      // FIX: The 'err' object from a catch block is of type 'unknown'. Safely handle it by checking if it's an instance of Error before using its properties.
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+      // FIX: Added explicit type annotation to `errorMessage` to resolve potential type inference issues
+      // with the `unknown` type in catch blocks, ensuring it's treated as a `string` when passed to `setError`.
+      const errorMessage: string = err instanceof Error ? err.message : 'An unknown error occurred.';
       setError(errorMessage);
       setChangedFilePaths(new Set()); // Clear highlights on error
       const errorModelMessage: ChatMessage = { role: 'model', content: `I encountered an error trying to process that: ${errorMessage}`, timestamp: new Date(), images: [] };
@@ -497,7 +504,9 @@ const App: React.FC = () => {
         document.body.removeChild(link);
         URL.revokeObjectURL(link.href);
     } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'Failed to generate detailed documentation.';
+        // FIX: Added explicit type annotation to `errorMessage` to resolve potential type inference issues
+        // with the `unknown` type in catch blocks, ensuring it's treated as a `string` when passed to `setError`.
+        const errorMessage: string = err instanceof Error ? err.message : 'Failed to generate detailed documentation.';
         setError(errorMessage);
         // This error will be displayed in the CodeOutput panel
     } finally {
@@ -531,7 +540,9 @@ const App: React.FC = () => {
     try {
         await firestoreService.updatePackage(selectedPackage.id, updatedCode);
     } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+        // FIX: Added explicit type annotation to `errorMessage` to resolve potential type inference issues
+        // with the `unknown` type in catch blocks, ensuring it's treated as a `string` when passed to `setError`.
+        const errorMessage: string = err instanceof Error ? err.message : 'An unknown error occurred.';
         setError(`Failed to save file "${path}": ${errorMessage}`);
         // Revert UI on failure
         setGeneratedCode(originalCode);

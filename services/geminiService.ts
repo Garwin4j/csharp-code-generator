@@ -1,6 +1,4 @@
-
-
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { GeneratedFile, FilePatch, ChatMessage } from '../types';
 import * as firestoreService from './firestoreService';
 
@@ -68,6 +66,113 @@ const parsePatchJsonResponse = (jsonString: string): FilePatch[] => {
     return patch as FilePatch[];
 };
 
+/**
+ * Helper function to make Gemini API requests with retry logic and exponential backoff.
+ * Handles RESOURCE_EXHAUSTED (429) errors.
+ * Immediately throws a user-friendly error for INVALID_ARGUMENT (400) token limit errors.
+ * @param requestFn The function that makes the actual Gemini API call (e.g., generateContentStream).
+ * @param onProgressUpdate A callback to update the UI/logs with progress messages, especially during retries.
+ * @param maxRetries The maximum number of retry attempts.
+ * @returns The full accumulated text response from the Gemini model.
+ * @throws An error if all retries are exhausted or a non-retryable error occurs.
+ */
+async function makeGeminiRequestWithRetry(
+    requestFn: () => Promise<AsyncIterable<GenerateContentResponse>>,
+    onProgressUpdate: (log: string) => Promise<void> | void,
+    maxRetries = 3
+): Promise<string> {
+    let attempt = 0;
+    let delay = 1000; // Initial delay for exponential backoff (1 second)
+    let fullResponseText = '';
+
+    while (attempt < maxRetries) {
+        attempt++;
+        try {
+            await onProgressUpdate(`Attempt ${attempt}/${maxRetries}: Contacting AI...`);
+
+            const responseStream = await requestFn();
+            fullResponseText = ''; // Reset for each streaming attempt
+
+            for await (const chunk of responseStream) {
+                const chunkText = chunk.text;
+                if (chunkText) {
+                    fullResponseText += chunkText;
+                    await onProgressUpdate(fullResponseText); // Update with cumulative progress
+                }
+            }
+            return fullResponseText; // Success
+        } catch (e: any) {
+            console.error(`Gemini API Error (Attempt ${attempt}):`, e);
+
+            let parsedError: any = null;
+            try {
+                // The error.message from the API client is often a stringified JSON object
+                // that might also be wrapped in a simple error string.
+                // Attempt to extract and parse the inner JSON error details.
+                const jsonMatch = String(e.message).match(/\{[\s\S]*\}/); // Find the first JSON object
+                if (jsonMatch) {
+                    parsedError = JSON.parse(jsonMatch[0]);
+                }
+            } catch (parseError) {
+                console.warn("Failed to parse detailed API error message as JSON:", parseError);
+            }
+
+            const errorCode = e.code || parsedError?.error?.code;
+            const errorMessage = e.message || parsedError?.error?.message;
+            const errorStatus = parsedError?.error?.status;
+            
+            // Handle INVALID_ARGUMENT (400) specifically for token limit errors
+            if (errorCode === 400 && errorMessage && errorMessage.includes("input token count exceeds the maximum")) {
+                throw new Error(`Your input (requirements + existing code) is too large for the AI model to process. Please simplify your requirements or reduce the number/size of base files you're providing. (Error: ${errorMessage.split('\n')[0]})`);
+            }
+
+            // Handle RESOURCE_EXHAUSTED (429) errors with retry logic
+            if (errorCode === 429 || errorStatus === 'RESOURCE_EXHAUSTED') {
+                let retryAfterSeconds = delay / 1000; // Default to current exponential delay
+                let detailedErrorMessage = "Quota exceeded. Please wait or check your billing.";
+                let quotaInfoLink = "https://ai.google.dev/gemini-api/docs/rate-limits";
+
+                if (parsedError?.error) {
+                    const errorObj = parsedError.error;
+                    // Take the first line of the error message, as it can be multi-line
+                    detailedErrorMessage = errorObj.message.split('\n')[0];
+                    const details = errorObj.details;
+
+                    const retryInfo = details?.find((d: any) => d['@type'] === 'type.googleapis.com/google.rpc.RetryInfo');
+                    if (retryInfo?.retryDelay) {
+                        const match = retryInfo.retryDelay.match(/(\d+)s/);
+                        if (match && match[1]) {
+                            retryAfterSeconds = parseInt(match[1]);
+                        }
+                    }
+
+                    const helpLink = details?.find((d: any) => d['@type'] === 'type.googleapis.com/google.rpc.Help');
+                    if (helpLink?.links?.[0]?.url) {
+                        quotaInfoLink = helpLink.links[0].url;
+                    }
+                }
+
+                if (attempt < maxRetries) {
+                    const waitTime = retryAfterSeconds * 1000;
+                    const progressMsg = `Quota exceeded. Retrying in ${Math.ceil(waitTime / 1000)}s... (Attempt ${attempt}/${maxRetries})\nReason: ${detailedErrorMessage}\nMore info: ${quotaInfoLink}`;
+                    await onProgressUpdate(progressMsg);
+                    await new Promise(res => setTimeout(res, waitTime));
+                    delay *= 2; // Exponential backoff for subsequent retries if retryDelay isn't provided or parsed.
+                } else {
+                    // All retries exhausted
+                    throw new Error(`Failed after ${maxRetries} attempts due to quota exhaustion. ${detailedErrorMessage}. For more information, visit ${quotaInfoLink}`);
+                }
+            } else {
+                // For any other non-429 and non-400 token limit error, rethrow immediately
+                throw e;
+            }
+        }
+    }
+    // This line should ideally not be reached if maxRetries > 0 and the loop handles it.
+    throw new Error(`Unknown error after ${maxRetries} attempts.`);
+}
+
+
 export async function generateCode(
   packageId: string,
   requirements: string,
@@ -87,7 +192,7 @@ export async function generateCode(
     2.  Review the provided existing files (their paths and content).
     3.  Compare the existing files against the requirements.
     4.  **Decision Making:**
-        - If an existing file perfectly matches a requirement, **keep it as is**.
+        - If an existing file perfectly matches a requirement, **keep it as is** (do not include it in the output if no changes are needed).
         - If an existing file is close but needs modifications (e.g., adding a property, changing logic), **update its content accordingly**.
         - If an existing file is no longer needed or is incorrect according to the requirements, **discard it** (do not include it in your final output).
         - If a file is required but does not exist in the provided files, **generate it from scratch**.
@@ -144,33 +249,20 @@ export async function generateCode(
   }
 
   try {
-    const responseStream = await ai.models.generateContentStream({
-        model: "gemini-2.5-flash",
-        contents: prompt,
-        config: {
-            responseMimeType: "application/json",
-            responseSchema: JSON_RESPONSE_SCHEMA,
-            // Low thinking budget to encourage faster streaming of initial files
-            thinkingConfig: { thinkingBudget: 100 }, 
-        },
-    });
-
-    let fullJsonResponse = '';
-    let lastUpdateTime = 0;
-    const UPDATE_INTERVAL = 2000; // Update Firestore at most every 2 seconds
-
-    for await (const chunk of responseStream) {
-        const chunkText = chunk.text;
-        if (chunkText) {
-            fullJsonResponse += chunkText;
-            const now = Date.now();
-            if (now - lastUpdateTime > UPDATE_INTERVAL) {
-                // Fire-and-forget update to not block the stream
-                firestoreService.updatePackageGenerationProgress(packageId, fullJsonResponse);
-                lastUpdateTime = now;
-            }
-        }
-    }
+    const fullJsonResponse = await makeGeminiRequestWithRetry(
+      () => ai.models.generateContentStream({
+          model: "gemini-2.5-flash",
+          contents: prompt,
+          config: {
+              responseMimeType: "application/json",
+              responseSchema: JSON_RESPONSE_SCHEMA,
+              // Low thinking budget to encourage faster streaming of initial files
+              thinkingConfig: { thinkingBudget: 100 },
+          },
+      }),
+      (progressLog: string) => firestoreService.updatePackageGenerationProgress(packageId, progressLog),
+      3 // Max 3 retries for generation
+    );
     
     const generatedFiles = parseJsonResponse(fullJsonResponse);
     await firestoreService.finalizePackageGeneration(packageId, generatedFiles);
@@ -262,23 +354,18 @@ export async function refineCode(
     const contents = { parts: [textPart, ...imageParts] };
 
     try {
-        const responseStream = await ai.models.generateContentStream({
-            model: "gemini-2.5-flash",
-            contents: contents,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: PATCH_RESPONSE_SCHEMA,
-            },
-        });
-
-        let fullJsonResponse = '';
-        for await (const chunk of responseStream) {
-            const chunkText = chunk.text;
-            if (chunkText) {
-                fullJsonResponse += chunkText;
-                onProgress(fullJsonResponse);
-            }
-        }
+        const fullJsonResponse = await makeGeminiRequestWithRetry(
+            () => ai.models.generateContentStream({
+                model: "gemini-2.5-flash",
+                contents: contents,
+                config: {
+                    responseMimeType: "application/json",
+                    responseSchema: PATCH_RESPONSE_SCHEMA,
+                },
+            }),
+            onProgress, // Pass the existing onProgress directly
+            3 // Max 3 retries for refinement
+        );
 
         return parsePatchJsonResponse(fullJsonResponse);
     } catch (error) {
@@ -286,7 +373,8 @@ export async function refineCode(
         if (error instanceof SyntaxError) {
             throw new Error("Failed to parse the model's patch response. The generated JSON was malformed.");
         }
-        throw new Error("Failed to generate patch. The model may have returned an unexpected format. Please check the console for details.");
+        // Rethrow the error message directly from makeGeminiRequestWithRetry
+        throw error;
     }
 }
 
