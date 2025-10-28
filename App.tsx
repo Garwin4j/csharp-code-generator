@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut, User as FirebaseUser, signInWithPopup } from 'firebase/auth';
 import { auth, googleProvider } from './firebaseConfig';
@@ -157,8 +156,9 @@ const App: React.FC = () => {
     // We use `updatedAt` to prevent infinite re-renders.
     if (updatedPackage && updatedPackage.updatedAt > selectedPackage.updatedAt) {
       setSelectedPackage(updatedPackage);
+      // FIX: Corrected typo from `updated287Package` to `updatedPackage`.
       if (updatedPackage.files) {
-        setGeneratedCode(updated287Package.files);
+        setGeneratedCode(updatedPackage.files);
       }
     }
   }, [packages, selectedPackage]);

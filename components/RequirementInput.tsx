@@ -89,6 +89,30 @@ const RequirementInput: React.FC<RequirementInputProps> = ({ value, onChange, on
     setUploadedZipName(null);
   };
   
+  const handleDownloadBaseJson = () => {
+    if (!baseFiles || !uploadedZipName) return;
+
+    const projectName = uploadedZipName.replace(/\.zip$/i, '') || 'Base_Project_Uploaded';
+    const jsonData = {
+        projectName: projectName,
+        initialRequirements: value, // Use the current requirements textarea content
+        files: baseFiles,
+    };
+
+    const jsonString = JSON.stringify(jsonData, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    
+    const fileName = `${projectName}_base_files.json`;
+
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+  };
+
   const handleGenerate = () => {
     if (isLoading) return;
     if (creationMode === 'scratch') {
@@ -175,9 +199,18 @@ const RequirementInput: React.FC<RequirementInputProps> = ({ value, onChange, on
                   </svg>
                   <span className="text-sm text-cyan-400 truncate" title={uploadedZipName}>{uploadedZipName}</span>
                 </div>
-                <button onClick={handleClearZip} className="text-sm text-gray-400 hover:text-red-400 font-semibold transition-colors">
-                  Clear
-                </button>
+                <div className="flex items-center gap-2"> {/* New wrapper div for buttons */}
+                  <button
+                    onClick={handleDownloadBaseJson}
+                    className="text-sm text-gray-400 hover:text-cyan-400 font-semibold transition-colors"
+                    title="Download base files as JSON"
+                  >
+                    Download JSON
+                  </button>
+                  <button onClick={handleClearZip} className="text-sm text-gray-400 hover:text-red-400 font-semibold transition-colors">
+                    Clear
+                  </button>
+                </div>
               </div>
             )}
           </div>
