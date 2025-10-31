@@ -1,3 +1,4 @@
+
 export interface GeneratedFile {
   path: string;
   content: string;
@@ -16,6 +17,7 @@ export interface Package {
     name: string;
     initialRequirements: string;
     files: GeneratedFile[] | null; // Can be null during generation
+    originalFiles?: GeneratedFile[] | null; // Added to store the initial project state for diffing
     createdAt: Date;
     updatedAt: Date;
     status: 'generating' | 'completed' | 'failed';

@@ -1,5 +1,4 @@
 
-
 import {
   collection,
   addDoc,
@@ -34,11 +33,17 @@ const convertPackageTimestamps = (docData: any): Omit<Package, 'id'> => {
         content: file.content
     })) : null;
 
+    const originalFiles = docData.originalFiles ? docData.originalFiles.map((file: GeneratedFile) => ({
+      path: file.path,
+      content: file.content
+    })) : null;
+
     return {
         userId: docData.userId,
         name: docData.name,
         initialRequirements: docData.initialRequirements,
         files: files,
+        originalFiles: originalFiles, // Include originalFiles
         createdAt: (docData.createdAt as Timestamp)?.toDate(),
         updatedAt: (docData.updatedAt as Timestamp)?.toDate(),
         status: docData.status,
@@ -50,11 +55,13 @@ const convertPackageTimestamps = (docData: any): Omit<Package, 'id'> => {
 export const createPackageForGeneration = async (
   initialRequirements: string,
   userId?: string,
+  baseFiles: GeneratedFile[] | null = null // Add baseFiles parameter
 ): Promise<Package> => {
   const newPackageData: any = {
     name: `New Project - ${new Date().toLocaleDateString()}`,
     initialRequirements,
     files: null,
+    originalFiles: baseFiles, // Store baseFiles as originalFiles if provided
     status: 'generating' as const,
     generationLog: 'Initializing...',
     error: '',
@@ -86,6 +93,7 @@ export const createPackageFromJson = async (
     name: data.projectName,
     initialRequirements: data.initialRequirements || 'Project created from JSON file.',
     files: data.files,
+    originalFiles: data.files, // Store uploaded files as originalFiles
     status: 'completed' as const,
     error: '',
     createdAt: serverTimestamp(),
@@ -115,6 +123,7 @@ export const createPackageFromJson = async (
       name: data.projectName,
       initialRequirements: data.initialRequirements || 'Project created from JSON file.',
       files: data.files,
+      originalFiles: data.files, // Also set for the returned object
       createdAt: now,
       updatedAt: now,
       status: 'completed',
@@ -143,6 +152,9 @@ export const finalizePackageGeneration = async (
     const packageDocRef = doc(db, 'packages', packageId);
     batch.update(packageDocRef, {
         files,
+        // If originalFiles is not already set (i.e., no baseFiles were uploaded),
+        // set the initial generated files as originalFiles.
+        originalFiles: files, 
         status: 'completed',
         generationLog: 'Generation complete.',
         updatedAt: serverTimestamp(),

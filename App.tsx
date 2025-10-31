@@ -117,6 +117,73 @@ const findChangedFiles = (oldFiles: GeneratedFile[], newFiles: GeneratedFile[]):
     return changed;
 };
 
+// --- New utility function for generating a diff summary ---
+function generateCodeDiffSummary(oldFiles: GeneratedFile[], newFiles: GeneratedFile[]): string {
+    const diffOutput: string[] = [];
+
+    const oldFileMap = new Map(oldFiles.map(f => [f.path, f.content]));
+    const newFileMap = new Map(newFiles.map(f => [f.path, f.content]));
+
+    const allPaths = new Set([...oldFileMap.keys(), ...newFileMap.keys()]);
+
+    for (const path of Array.from(allPaths).sort()) {
+        const oldContent = oldFileMap.get(path);
+        const newContent = newFileMap.get(path);
+
+        if (oldContent === undefined && newContent !== undefined) {
+            // File added
+            diffOutput.push(`diff --git a/${path} b/${path}`);
+            diffOutput.push(`--- /dev/null`);
+            diffOutput.push(`+++ b/${path}`);
+            newContent.split('\n').forEach(line => diffOutput.push(`+${line}`));
+            diffOutput.push(''); // blank line for separation
+        } else if (oldContent !== undefined && newContent === undefined) {
+            // File deleted
+            diffOutput.push(`diff --git a/${path} b/${path}`);
+            diffOutput.push(`--- a/${path}`);
+            diffOutput.push(`+++ /dev/null`);
+            oldContent.split('\n').forEach(line => diffOutput.push(`-${line}`));
+            diffOutput.push(''); // blank line for separation
+        } else if (oldContent !== undefined && newContent !== undefined && oldContent !== newContent) {
+            // File modified
+            diffOutput.push(`diff --git a/${path} b/${path}`);
+            diffOutput.push(`--- a/${path}`);
+            diffOutput.push(`+++ b/${path}`);
+
+            const oldLines = oldContent.split('\n');
+            const newLines = newContent.split('\n');
+
+            // Reconstruct diff from LCS matrix
+            const lcsMatrix = lcs(oldLines, newLines);
+            const changes: Array<{ type: 'same' | 'added' | 'removed', line: string }> = [];
+            let oi = oldLines.length;
+            let nj = newLines.length;
+
+            while (oi > 0 || nj > 0) {
+                if (oi > 0 && nj > 0 && oldLines[oi - 1] === newLines[nj - 1]) {
+                    changes.unshift({ type: 'same', line: oldLines[oi - 1] });
+                    oi--; nj--;
+                } else if (nj > 0 && (oi === 0 || lcsMatrix[oi][nj - 1] >= lcsMatrix[oi - 1][nj])) {
+                    changes.unshift({ type: 'added', line: newLines[nj - 1] });
+                    nj--;
+                } else { // oi > 0 && (nj === 0 || lcsMatrix[oi - 1][nj] > lcsMatrix[oi][nj - 1])
+                    changes.unshift({ type: 'removed', line: oldLines[oi - 1] });
+                    oi--;
+                }
+            }
+
+            // Output the changes with +/-/ prefix
+            changes.forEach(change => {
+                if (change.type === 'added') diffOutput.push(`+${change.line}`);
+                else if (change.type === 'removed') diffOutput.push(`-${change.line}`);
+                else diffOutput.push(` ${change.line}`); // Common line
+            });
+            diffOutput.push(''); // blank line for separation
+        }
+    }
+    return diffOutput.join('\n');
+}
+
 
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>('loading');
@@ -131,11 +198,14 @@ const App: React.FC = () => {
   const [generatedCode, setGeneratedCode] = useState<GeneratedFile[] | null>(null);
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [checkpointToRevert, setCheckpointToRevert] = useState<Checkpoint | null>(null);
+  // FIX: Initialize useState with a new Set instance
   const [changedFilePaths, setChangedFilePaths] = useState<Set<string>>(new Set());
+  // FIX: Initialize useState with a new Map instance
   const [fileDiffs, setFileDiffs] = useState<Map<string, Set<number>>>(new Map());
   
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isGeneratingDocs, setIsGeneratingDocs] = useState<boolean>(false);
+  const [isGeneratingPatch, setIsGeneratingPatch] = useState<boolean>(false); // New state for patch generation
   const [error, setError] = useState<string | null>(null);
   const [thinkingProgress, setThinkingProgress] = useState<string>('');
   const [isThinkingPanelOpen, setIsThinkingPanelOpen] = useState<boolean>(false);
@@ -207,8 +277,9 @@ const App: React.FC = () => {
     setGeneratedCode(null);
     setChatHistory([]);
     setPackages([]);
-    setCheckpoints([]);
+    // FIX: Call setChangedFilePaths with a new Set instance
     setChangedFilePaths(new Set());
+    // FIX: Call setFileDiffs with a new Map instance
     setFileDiffs(new Map());
     setAppState('home');
   };
@@ -217,13 +288,17 @@ const App: React.FC = () => {
     const pkg = packages.find(p => p.id === packageId) || await firestoreService.getPackage(packageId);
     if (pkg && pkg.files) {
       setIsLoading(true);
-      setSelectedPackage(pkg);
-      setGeneratedCode(pkg.files);
+      // Ensure originalFiles is always set when selecting a package
+      const fullPkg: Package = { ...pkg, originalFiles: pkg.originalFiles || pkg.files };
+      setSelectedPackage(fullPkg);
+      setGeneratedCode(fullPkg.files);
+      // FIX: Call setChangedFilePaths with a new Set instance
       setChangedFilePaths(new Set()); // Clear highlights on new selection
+      // FIX: Call setFileDiffs with a new Map instance
       setFileDiffs(new Map());
-      const history = await firestoreService.getPackageChatHistory(pkg.id);
+      const history = await firestoreService.getPackageChatHistory(fullPkg.id);
       setChatHistory(history);
-      const packageCheckpoints = await firestoreService.getCheckpoints(pkg.id);
+      const packageCheckpoints = await firestoreService.getCheckpoints(fullPkg.id);
       setCheckpoints(packageCheckpoints);
       setAppState('chat');
       setIsLoading(false);
@@ -235,13 +310,17 @@ const App: React.FC = () => {
     setIsLoading(true);
     const pkg = await firestoreService.getPackage(key.trim());
     if (pkg) {
-        setSelectedPackage(pkg);
-        setGeneratedCode(pkg.files);
+        // Ensure originalFiles is always set when loading a package
+        const fullPkg: Package = { ...pkg, originalFiles: pkg.originalFiles || pkg.files };
+        setSelectedPackage(fullPkg);
+        setGeneratedCode(fullPkg.files);
+        // FIX: Call setChangedFilePaths with a new Set instance
         setChangedFilePaths(new Set());
+        // FIX: Call setFileDiffs with a new Map instance
         setFileDiffs(new Map());
-        const history = await firestoreService.getPackageChatHistory(pkg.id);
+        const history = await firestoreService.getPackageChatHistory(fullPkg.id);
         setChatHistory(history);
-        const packageCheckpoints = await firestoreService.getCheckpoints(pkg.id);
+        const packageCheckpoints = await firestoreService.getCheckpoints(fullPkg.id);
         setCheckpoints(packageCheckpoints);
         setAppState('chat');
     } else {
@@ -255,7 +334,9 @@ const App: React.FC = () => {
     setGeneratedCode(null);
     setChatHistory([]);
     setCheckpoints([]);
+    // FIX: Call setChangedFilePaths with a new Set instance
     setChangedFilePaths(new Set());
+    // FIX: Call setFileDiffs with a new Map instance
     setFileDiffs(new Map());
     setRequirements(INITIAL_REQUIREMENTS);
     setAppState('generating');
@@ -266,7 +347,9 @@ const App: React.FC = () => {
     setGeneratedCode(null);
     setChatHistory([]);
     setCheckpoints([]);
+    // FIX: Call setChangedFilePaths with a new Set instance
     setChangedFilePaths(new Set());
+    // FIX: Call setFileDiffs with a new Map instance
     setFileDiffs(new Map());
     setAppState('home');
   };
@@ -275,12 +358,14 @@ const App: React.FC = () => {
     if (!requirements.trim()) return;
     setIsLoading(true);
     setError(null);
+    // FIX: Call setChangedFilePaths with a new Set instance
     setChangedFilePaths(new Set());
+    // FIX: Call setFileDiffs with a new Map instance
     setFileDiffs(new Map());
   
     try {
       // Create package first, works for guests (user?.uid is undefined) and logged-in users
-      const newPackage = await firestoreService.createPackageForGeneration(requirements, user?.uid);
+      const newPackage = await firestoreService.createPackageForGeneration(requirements, user?.uid, baseFiles); // Pass baseFiles
       setSelectedPackage(newPackage);
       setAppState('chat'); // Go directly to chat/generation view
   
@@ -311,12 +396,16 @@ const App: React.FC = () => {
 
         const newPackage = await firestoreService.createPackageFromJson(data, user?.uid);
         
-        setSelectedPackage(newPackage);
-        setGeneratedCode(newPackage.files);
+        // Ensure originalFiles is set for the selected package state
+        const fullPkg: Package = { ...newPackage, originalFiles: newPackage.files };
+        setSelectedPackage(fullPkg);
+        setGeneratedCode(fullPkg.files);
+        // FIX: Call setChangedFilePaths with a new Set instance
         setChangedFilePaths(new Set()); 
+        // FIX: Call setFileDiffs with a new Map instance
         setFileDiffs(new Map());
         setChatHistory([]); // New project from JSON has no chat history.
-        const packageCheckpoints = await firestoreService.getCheckpoints(newPackage.id);
+        const packageCheckpoints = await firestoreService.getCheckpoints(fullPkg.id);
         setCheckpoints(packageCheckpoints);
         setAppState('chat');
 
@@ -433,6 +522,7 @@ const App: React.FC = () => {
     setError(null);
     setThinkingProgress('');
     setIsThinkingPanelOpen(true);
+    // FIX: Call setFileDiffs with a new Map instance
     setFileDiffs(new Map()); // Clear previous diffs
 
     try {
@@ -463,6 +553,7 @@ const App: React.FC = () => {
       
       setGeneratedCode(updatedCode);
       setSelectedPackage(prev => prev ? { ...prev, files: updatedCode, updatedAt: new Date() } : null);
+      // FIX: Call setChangedFilePaths with a new Set instance
       setChangedFilePaths(new Set(patch.map(p => p.path)));
 
       const modelMessage: ChatMessage = { role: 'model', content: "Done! I've updated the code based on your request. Take a look at the changes.", timestamp: new Date(), images: [] };
@@ -474,6 +565,7 @@ const App: React.FC = () => {
       // with the `unknown` type in catch blocks, ensuring it's treated as a `string` when passed to `setError`.
       const errorMessage: string = err instanceof Error ? err.message : 'An unknown error occurred.';
       setError(errorMessage);
+      // FIX: Call setChangedFilePaths with a new Set instance
       setChangedFilePaths(new Set()); // Clear highlights on error
       const errorModelMessage: ChatMessage = { role: 'model', content: `I encountered an error trying to process that: ${errorMessage}`, timestamp: new Date(), images: [] };
       await firestoreService.addChatMessage(selectedPackage.id, errorModelMessage);
@@ -514,6 +606,45 @@ const App: React.FC = () => {
     }
   };
 
+  const handleDownloadGitPatch = async () => {
+    if (!selectedPackage?.originalFiles || !generatedCode || !selectedPackage?.name || isGeneratingPatch) return;
+
+    setIsGeneratingPatch(true);
+    setError(null);
+
+    try {
+        const patchContent = generateCodeDiffSummary(selectedPackage.originalFiles, generatedCode);
+        if (!patchContent.trim()) {
+            alert("No changes detected since project inception to generate a patch.");
+            return;
+        }
+
+        const blob = new Blob([patchContent], { type: 'text/x-diff;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        const projectName = selectedPackage.name.replace(/[^a-zA-Z0-9-]/g, '_').replace(/_+/g, '_');
+        
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        const dateString = `${year}-${month}-${day}`;
+
+        link.download = `${projectName}_changes_${dateString}.patch`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+
+    } catch (err) {
+        const errorMessage: string = err instanceof Error ? err.message : 'Failed to generate Git patch.';
+        setError(errorMessage);
+        console.error("Failed to generate Git patch:", errorMessage);
+    } finally {
+        setIsGeneratingPatch(false);
+    }
+};
+
 
   const handleSaveFile = async (path: string, content: string) => {
     if (!generatedCode || !selectedPackage) return;
@@ -526,6 +657,7 @@ const App: React.FC = () => {
     // Optimistically update UI
     setGeneratedCode(updatedCode);
     setSelectedPackage(prev => prev ? { ...prev, files: updatedCode, updatedAt: new Date() } : null);
+    // FIX: Call setChangedFilePaths with a new Set instance based on previous state
     setChangedFilePaths(prev => new Set(prev).add(path));
     // A user edit clears the AI-generated diff highlighting for that file
     setFileDiffs(prev => {
@@ -607,6 +739,8 @@ const App: React.FC = () => {
             changedFilePaths={changedFilePaths}
             onSaveFile={handleSaveFile}
             fileDiffs={fileDiffs}
+            onDownloadGitPatch={handleDownloadGitPatch} // Pass the new handler
+            isGeneratingPatch={isGeneratingPatch} // Pass loading state
           />
         );
 
