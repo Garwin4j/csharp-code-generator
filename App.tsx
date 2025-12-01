@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { onAuthStateChanged, signOut, User as FirebaseUser, signInWithPopup } from 'firebase/auth';
+import * as firebaseAuth from 'firebase/auth';
 import { auth, googleProvider } from './firebaseConfig';
 import { GeneratedFile, ChatMessage, Package, FilePatch, Checkpoint } from './types';
 import * as geminiService from './services/geminiService';
@@ -108,9 +108,9 @@ const findChangedFiles = (oldFiles: GeneratedFile[], newFiles: GeneratedFile[]):
     const newFileMap = new Map(newFiles.map(f => [f.path, f.content]));
     const changed = new Set<string>();
 
-    for (const [path, content] of newFileMap.entries()) {
+    for (const path of Array.from(newFileMap.keys())) {
         // A file is considered changed if it's new OR its content is different.
-        if (!oldFileMap.has(path) || oldFileMap.get(path) !== content) {
+        if (!oldFileMap.has(path) || oldFileMap.get(path) !== newFileMap.get(path)) {
             changed.add(path);
         }
     }
@@ -187,7 +187,7 @@ function generateCodeDiffSummary(oldFiles: GeneratedFile[], newFiles: GeneratedF
 
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>('loading');
-  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [user, setUser] = useState<firebaseAuth.User | null>(null);
   
   const [packages, setPackages] = useState<Package[]>([]);
   const [selectedPackage, setSelectedPackage] = useState<Package | null>(null);
@@ -218,19 +218,39 @@ const App: React.FC = () => {
     // This effect syncs the `selectedPackage` state with real-time updates from the `packages` list.
     // This is crucial for updating the view after a background generation completes, ensuring
     // the app uses the latest, sanitized data from Firestore and preventing circular reference errors.
-    if (!selectedPackage?.id) return;
+    const syncPackage = async () => {
+        if (!selectedPackage?.id) return;
 
-    const updatedPackage = packages.find(p => p.id === selectedPackage.id);
+        const updatedPackage = packages.find(p => p.id === selectedPackage.id);
 
-    // If an updated version is found in the main list (e.g., generation finished), sync the state.
-    // We use `updatedAt` to prevent infinite re-renders.
-    if (updatedPackage && updatedPackage.updatedAt > selectedPackage.updatedAt) {
-      setSelectedPackage(updatedPackage);
-      // FIX: Corrected typo from `updated287Package` to `updatedPackage`.
-      if (updatedPackage.files) {
-        setGeneratedCode(updatedPackage.files);
-      }
-    }
+        // If an updated version is found in the main list (e.g., generation finished), sync the state.
+        // We use `updatedAt` to prevent infinite re-renders.
+        if (updatedPackage && updatedPackage.updatedAt > selectedPackage.updatedAt) {
+          
+          // Check if the updated package is "large" (missing files in the list view due to chunking)
+          if (updatedPackage.status === 'completed' && (!updatedPackage.files || updatedPackage.files.length === 0)) {
+              // We need to fetch the full package data including chunks
+              try {
+                  const fullPkg = await firestoreService.getPackage(updatedPackage.id);
+                  if (fullPkg) {
+                      setSelectedPackage(fullPkg);
+                      if (fullPkg.files) {
+                          setGeneratedCode(fullPkg.files);
+                      }
+                  }
+              } catch (err) {
+                  console.error("Failed to sync large package:", err);
+              }
+          } else {
+              // Standard update
+              setSelectedPackage(updatedPackage);
+              if (updatedPackage.files) {
+                  setGeneratedCode(updatedPackage.files);
+              }
+          }
+        }
+    };
+    syncPackage();
   }, [packages, selectedPackage]);
 
   useEffect(() => {
@@ -240,7 +260,7 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = firebaseAuth.onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setAppState('home');
       if (!currentUser) {
@@ -263,7 +283,7 @@ const App: React.FC = () => {
 
   const handleLogin = async () => {
     try {
-      await signInWithPopup(auth, googleProvider);
+      await firebaseAuth.signInWithPopup(auth, googleProvider);
       // onAuthStateChanged will handle the rest
     } catch (err) {
       console.error("Login failed:", err);
@@ -272,7 +292,7 @@ const App: React.FC = () => {
   };
 
   const handleLogout = async () => {
-    await signOut(auth);
+    await firebaseAuth.signOut(auth);
     setSelectedPackage(null);
     setGeneratedCode(null);
     setChatHistory([]);
@@ -285,48 +305,72 @@ const App: React.FC = () => {
   };
 
   const handleSelectPackage = async (packageId: string) => {
-    const pkg = packages.find(p => p.id === packageId) || await firestoreService.getPackage(packageId);
-    if (pkg && pkg.files) {
-      setIsLoading(true);
-      // Ensure originalFiles is always set when selecting a package
-      const fullPkg: Package = { ...pkg, originalFiles: pkg.originalFiles || pkg.files };
-      setSelectedPackage(fullPkg);
-      setGeneratedCode(fullPkg.files);
-      // FIX: Call setChangedFilePaths with a new Set instance
-      setChangedFilePaths(new Set()); // Clear highlights on new selection
-      // FIX: Call setFileDiffs with a new Map instance
-      setFileDiffs(new Map());
-      const history = await firestoreService.getPackageChatHistory(fullPkg.id);
-      setChatHistory(history);
-      const packageCheckpoints = await firestoreService.getCheckpoints(fullPkg.id);
-      setCheckpoints(packageCheckpoints);
-      setAppState('chat');
-      setIsLoading(false);
+    setIsLoading(true);
+    try {
+        let pkg = packages.find(p => p.id === packageId);
+        
+        // If the package from the list is missing files (likely due to chunking/size), fetch the full package.
+        // Also fetch if not found in list (e.g. shared key)
+        if (!pkg || (pkg.status === 'completed' && (!pkg.files || pkg.files.length === 0))) {
+            const fetchedPkg = await firestoreService.getPackage(packageId);
+            if (fetchedPkg) {
+                pkg = fetchedPkg;
+            }
+        }
+
+        if (pkg && (pkg.files || pkg.status === 'generating')) {
+          // Ensure originalFiles is always set when selecting a package
+          const fullPkg: Package = { ...pkg, originalFiles: pkg.originalFiles || pkg.files };
+          setSelectedPackage(fullPkg);
+          setGeneratedCode(fullPkg.files);
+          // FIX: Call setChangedFilePaths with a new Set instance
+          setChangedFilePaths(new Set()); // Clear highlights on new selection
+          // FIX: Call setFileDiffs with a new Map instance
+          setFileDiffs(new Map());
+          
+          const history = await firestoreService.getPackageChatHistory(fullPkg.id);
+          setChatHistory(history);
+          const packageCheckpoints = await firestoreService.getCheckpoints(fullPkg.id);
+          setCheckpoints(packageCheckpoints);
+          
+          setAppState('chat');
+        }
+    } catch(err) {
+        console.error("Error loading package:", err);
+        setError("Failed to load project.");
+    } finally {
+        setIsLoading(false);
     }
   };
 
   const handleLoadFromKey = async (key: string) => {
     if (!key.trim()) return;
     setIsLoading(true);
-    const pkg = await firestoreService.getPackage(key.trim());
-    if (pkg) {
-        // Ensure originalFiles is always set when loading a package
-        const fullPkg: Package = { ...pkg, originalFiles: pkg.originalFiles || pkg.files };
-        setSelectedPackage(fullPkg);
-        setGeneratedCode(fullPkg.files);
-        // FIX: Call setChangedFilePaths with a new Set instance
-        setChangedFilePaths(new Set());
-        // FIX: Call setFileDiffs with a new Map instance
-        setFileDiffs(new Map());
-        const history = await firestoreService.getPackageChatHistory(fullPkg.id);
-        setChatHistory(history);
-        const packageCheckpoints = await firestoreService.getCheckpoints(fullPkg.id);
-        setCheckpoints(packageCheckpoints);
-        setAppState('chat');
-    } else {
-        alert("Project key not found.");
+    try {
+        const pkg = await firestoreService.getPackage(key.trim());
+        if (pkg) {
+            // Ensure originalFiles is always set when loading a package
+            const fullPkg: Package = { ...pkg, originalFiles: pkg.originalFiles || pkg.files };
+            setSelectedPackage(fullPkg);
+            setGeneratedCode(fullPkg.files);
+            // FIX: Call setChangedFilePaths with a new Set instance
+            setChangedFilePaths(new Set());
+            // FIX: Call setFileDiffs with a new Map instance
+            setFileDiffs(new Map());
+            const history = await firestoreService.getPackageChatHistory(fullPkg.id);
+            setChatHistory(history);
+            const packageCheckpoints = await firestoreService.getCheckpoints(fullPkg.id);
+            setCheckpoints(packageCheckpoints);
+            setAppState('chat');
+        } else {
+            alert("Project key not found.");
+        }
+    } catch(err) {
+        console.error("Error loading project from key:", err);
+        alert("Failed to load project.");
+    } finally {
+        setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   const handleNewPackage = () => {
