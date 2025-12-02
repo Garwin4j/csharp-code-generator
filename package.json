@@ -15,7 +15,8 @@
     "jszip": "latest",
     "react-markdown": "latest",
     "remark-gfm": "latest",
-    "firebase": "^12.3.0"
+    "firebase": "^12.3.0",
+    "diff": "latest"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

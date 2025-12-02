@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { User, onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
 import { auth, googleProvider } from './firebaseConfig';
@@ -7,6 +6,7 @@ import { GeneratedFile, ChatMessage, Package, FilePatch, Checkpoint } from './ty
 import * as geminiService from './services/geminiService';
 import * as firestoreService from './services/firestoreService';
 import { INITIAL_REQUIREMENTS } from './constants';
+import { createPatch } from 'diff';
 
 import Header from './components/Header';
 import RequirementInput from './components/RequirementInput';
@@ -120,69 +120,44 @@ const findChangedFiles = (oldFiles: GeneratedFile[], newFiles: GeneratedFile[]):
 
 // --- New utility function for generating a diff summary ---
 function generateCodeDiffSummary(oldFiles: GeneratedFile[], newFiles: GeneratedFile[]): string {
-    const diffOutput: string[] = [];
-
+    let patch = '';
     const oldFileMap = new Map(oldFiles.map(f => [f.path, f.content]));
     const newFileMap = new Map(newFiles.map(f => [f.path, f.content]));
-
     const allPaths = new Set([...oldFileMap.keys(), ...newFileMap.keys()]);
 
-    for (const path of Array.from(allPaths).sort()) {
+    const sortedPaths = Array.from(allPaths).sort();
+
+    for (const path of sortedPaths) {
         const oldContent = oldFileMap.get(path);
         const newContent = newFileMap.get(path);
 
+        if (oldContent === newContent) continue;
+
+        let filePatch = '';
         if (oldContent === undefined && newContent !== undefined) {
-            // File added
-            diffOutput.push(`diff --git a/${path} b/${path}`);
-            diffOutput.push(`--- /dev/null`);
-            diffOutput.push(`+++ b/${path}`);
-            newContent.split('\n').forEach(line => diffOutput.push(`+${line}`));
-            diffOutput.push(''); // blank line for separation
+            // Added
+            // createPatch(fileName, oldStr, newStr, oldHeader, newHeader)
+            filePatch = createPatch(path, '', newContent, `/dev/null`, `b/${path}`);
         } else if (oldContent !== undefined && newContent === undefined) {
-            // File deleted
-            diffOutput.push(`diff --git a/${path} b/${path}`);
-            diffOutput.push(`--- a/${path}`);
-            diffOutput.push(`+++ /dev/null`);
-            oldContent.split('\n').forEach(line => diffOutput.push(`-${line}`));
-            diffOutput.push(''); // blank line for separation
-        } else if (oldContent !== undefined && newContent !== undefined && oldContent !== newContent) {
-            // File modified
-            diffOutput.push(`diff --git a/${path} b/${path}`);
-            diffOutput.push(`--- a/${path}`);
-            diffOutput.push(`+++ b/${path}`);
+            // Deleted
+            filePatch = createPatch(path, oldContent, '', `a/${path}`, `/dev/null`);
+        } else if (oldContent !== undefined && newContent !== undefined) {
+             // Modified
+             filePatch = createPatch(path, oldContent, newContent, `a/${path}`, `b/${path}`);
+        }
 
-            const oldLines = oldContent.split('\n');
-            const newLines = newContent.split('\n');
-
-            // Reconstruct diff from LCS matrix
-            const lcsMatrix = lcs(oldLines, newLines);
-            const changes: Array<{ type: 'same' | 'added' | 'removed', line: string }> = [];
-            let oi = oldLines.length;
-            let nj = newLines.length;
-
-            while (oi > 0 || nj > 0) {
-                if (oi > 0 && nj > 0 && oldLines[oi - 1] === newLines[nj - 1]) {
-                    changes.unshift({ type: 'same', line: oldLines[oi - 1] });
-                    oi--; nj--;
-                } else if (nj > 0 && (oi === 0 || lcsMatrix[oi][nj - 1] >= lcsMatrix[oi - 1][nj])) {
-                    changes.unshift({ type: 'added', line: newLines[nj - 1] });
-                    nj--;
-                } else { // oi > 0 && (nj === 0 || lcsMatrix[oi - 1][nj] > lcsMatrix[oi][nj - 1])
-                    changes.unshift({ type: 'removed', line: oldLines[oi - 1] });
-                    oi--;
-                }
-            }
-
-            // Output the changes with +/-/ prefix
-            changes.forEach(change => {
-                if (change.type === 'added') diffOutput.push(`+${change.line}`);
-                else if (change.type === 'removed') diffOutput.push(`-${change.line}`);
-                else diffOutput.push(` ${change.line}`); // Common line
-            });
-            diffOutput.push(''); // blank line for separation
+        // Clean up headers to look like git-diff
+        // createPatch produces "Index: ... \n ===... \n --- ... "
+        // We want to replace the first two lines with "diff --git a/path b/path"
+        const lines = filePatch.split('\n');
+        const headerStartIndex = lines.findIndex(line => line.startsWith('---'));
+        
+        if (headerStartIndex >= 0) {
+             const cleanPatch = lines.slice(headerStartIndex).join('\n');
+             patch += `diff --git a/${path} b/${path}\n${cleanPatch}\n`;
         }
     }
-    return diffOutput.join('\n');
+    return patch;
 }
 
 
@@ -325,6 +300,8 @@ const App: React.FC = () => {
           setCheckpoints(packageCheckpoints);
           
           setAppState('chat');
+        } else {
+             setError("Could not load project files. Please try again.");
         }
     } catch(err) {
         console.error("Error loading package:", err);
@@ -486,11 +463,13 @@ const App: React.FC = () => {
       
       try {
           const newDiffs = new Map<string, Set<number>>();
-          const oldFileMap = new Map(oldCode.map(f => [f.path, f.content]));
+          // Explicitly type the map to ensure values are strings
+          const oldFileMap = new Map<string, string>(oldCode.map(f => [f.path, f.content]));
 
           newCode.forEach(newFile => {
-              const oldContent = oldFileMap.get(newFile.path) ?? '';
+              const oldContent: string = oldFileMap.get(newFile.path) ?? '';
               if (newFile.content !== oldContent) {
+                  // Ensure inputs to calculateLineDiff are strings
                   const diff = calculateLineDiff(oldContent, newFile.content);
                   if (diff.size > 0) {
                       newDiffs.set(newFile.path, diff);
@@ -545,7 +524,7 @@ const App: React.FC = () => {
       patch.forEach(p => {
           if (p.op === 'add' || p.op === 'update') {
               const oldFile = oldCode.find(f => f.path === p.path);
-              const oldContent = oldFile ? oldFile.content : '';
+              const oldContent: string = oldFile ? oldFile.content : '';
               const newContent = p.content;
               const diff = calculateLineDiff(oldContent, newContent);
               if (diff.size > 0) {

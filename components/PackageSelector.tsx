@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Package } from '../types';
 
@@ -262,10 +261,10 @@ const PackageSelector: React.FC<PackageSelectorProps> = ({ packages, onSelect, o
                     <div className="flex items-center gap-2 mt-2">
                         <button
                             onClick={() => onSelect(pkg.id)}
-                            disabled={pkg.status === 'generating'}
+                            disabled={pkg.status === 'generating' || isLoading}
                             className="w-full bg-gray-700 hover:bg-gray-600 disabled:bg-gray-700/50 disabled:cursor-not-allowed disabled:text-gray-500 text-white font-semibold py-2 px-4 rounded-md transition-colors"
                         >
-                            Open Project
+                            {isLoading ? 'Loading...' : 'Open Project'}
                         </button>
                         <button
                             onClick={() => onDelete(pkg)}
