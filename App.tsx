@@ -119,6 +119,17 @@ const findChangedFiles = (oldFiles: GeneratedFile[], newFiles: GeneratedFile[]):
 };
 
 // --- New utility function for generating a diff summary ---
+
+const normalizeForPatch = (str: string): string => {
+  // Normalize line endings to LF
+  let normalized = str.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  // Ensure trailing newline for standard git behavior
+  if (normalized && !normalized.endsWith('\n')) {
+    normalized += '\n';
+  }
+  return normalized;
+};
+
 function generateCodeDiffSummary(oldFiles: GeneratedFile[], newFiles: GeneratedFile[]): string {
     let patch = '';
     const oldFileMap = new Map(oldFiles.map(f => [f.path, f.content]));
@@ -128,8 +139,12 @@ function generateCodeDiffSummary(oldFiles: GeneratedFile[], newFiles: GeneratedF
     const sortedPaths = Array.from(allPaths).sort();
 
     for (const path of sortedPaths) {
-        const oldContent = oldFileMap.get(path);
-        const newContent = newFileMap.get(path);
+        const oldContentRaw = oldFileMap.get(path);
+        const newContentRaw = newFileMap.get(path);
+
+        // Normalize content for reliable diff generation, ignoring pure line-ending differences
+        const oldContent = oldContentRaw !== undefined ? normalizeForPatch(oldContentRaw) : undefined;
+        const newContent = newContentRaw !== undefined ? normalizeForPatch(newContentRaw) : undefined;
 
         if (oldContent === newContent) continue;
 
@@ -148,13 +163,16 @@ function generateCodeDiffSummary(oldFiles: GeneratedFile[], newFiles: GeneratedF
 
         // Clean up headers to look like git-diff
         // createPatch produces "Index: ... \n ===... \n --- ... "
-        // We want to replace the first two lines with "diff --git a/path b/path"
+        // We want to replace the first two lines with "diff --git a/path b/path" and "index ..."
         const lines = filePatch.split('\n');
         const headerStartIndex = lines.findIndex(line => line.startsWith('---'));
         
         if (headerStartIndex >= 0) {
              const cleanPatch = lines.slice(headerStartIndex).join('\n');
-             patch += `diff --git a/${path} b/${path}\n${cleanPatch}\n`;
+             patch += `diff --git a/${path} b/${path}\n`;
+             // Adding a dummy index line helps git apply recognize the format and suppress warnings
+             patch += `index 0000000..0000000 100644\n`; 
+             patch += `${cleanPatch}\n`;
         }
     }
     return patch;
