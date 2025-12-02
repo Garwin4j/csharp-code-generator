@@ -41,15 +41,13 @@ const saveLargeDoc = async (
     largeData: { [key: string]: any }
 ) => {
     const largeDataJson = JSON.stringify(largeData);
-    const batch = writeBatch(db);
 
     if (largeDataJson.length < CHUNK_SIZE) {
         // Small enough: save directly in the main document
         // We set isChunked: false to indicate data is local
+        const batch = writeBatch(db);
         batch.set(docRef, { ...baseData, ...largeData, isChunked: false }, { merge: true });
-        
-        // We ideally should clean up old chunks if they exist, but for performance/simplicity 
-        // we rely on the isChunked flag to ignore them during read.
+        await batch.commit();
     } else {
         // Too large: chunk it
         const chunks: string[] = [];
@@ -57,7 +55,29 @@ const saveLargeDoc = async (
             chunks.push(largeDataJson.substring(i, i + CHUNK_SIZE));
         }
 
-        // Set main document with metadata, flagging it as chunked.
+        // We need to write the main doc and the chunks.
+        // Firestore batch limit is 500 writes or 10MB payload.
+        // 800KB * 12 = 9.6MB. Let's start a new batch every 10 chunks to be safe.
+        const BATCH_CHUNK_LIMIT = 10;
+        
+        let batch = writeBatch(db);
+        let operationCount = 0;
+
+        const chunksCol = collection(docRef, 'data_chunks');
+
+        for (let i = 0; i < chunks.length; i++) {
+            const chunkDoc = doc(chunksCol, i.toString());
+            batch.set(chunkDoc, { content: chunks[i], index: i });
+            operationCount++;
+
+            if (operationCount >= BATCH_CHUNK_LIMIT) {
+                await batch.commit();
+                batch = writeBatch(db);
+                operationCount = 0;
+            }
+        }
+
+        // Final batch includes the main document update
         // We explicitly delete the large fields from the main doc to free space.
         const deleteFieldsUpdate: any = {};
         Object.keys(largeData).forEach(key => {
@@ -70,16 +90,9 @@ const saveLargeDoc = async (
             isChunked: true, 
             chunkCount: chunks.length 
         }, { merge: true });
-
-        // Write chunks to subcollection 'data_chunks'
-        const chunksCol = collection(docRef, 'data_chunks');
-        chunks.forEach((chunk, index) => {
-            const chunkDoc = doc(chunksCol, index.toString());
-            batch.set(chunkDoc, { content: chunk, index });
-        });
+        
+        await batch.commit();
     }
-
-    await batch.commit();
 };
 
 /**
@@ -97,9 +110,6 @@ const loadLargeDoc = async (docSnap: DocumentSnapshot): Promise<any> => {
 
     // Data is chunked, fetch from subcollection
     const chunksCol = collection(docSnap.ref, 'data_chunks');
-    // We assume chunks are indexed 0, 1, 2... and valid. 
-    // Fetching all might be okay, or we can fetch by count.
-    // Let's fetch all.
     const q = query(chunksCol, orderBy('index'));
     const chunkSnaps = await getDocs(q);
     
@@ -257,28 +267,9 @@ export const finalizePackageGeneration = async (
 ): Promise<void> => {
     const packageDocRef = doc(db, 'packages', packageId);
 
-    // Save package files
-    // Note: We need to preserve existing fields, but saveLargeDoc merges baseData.
-    // However, we want to update specific fields.
-    // We'll read the 'originalFiles' from the doc effectively via merge, but we need to pass the new files.
-    // Actually, saveLargeDoc uses { merge: true }, so passing just the updates works.
-    
-    // BUT, if the doc was already chunked, we are rewriting the chunks.
-    // If we call saveLargeDoc, it handles the logic correctly (rewrites chunks or switches to inline).
-    
-    // We need to verify if we need to retrieve originalFiles to keep them?
-    // saveLargeDoc receives `largeData`. If we only pass `files`, `originalFiles` might be lost if it was in the chunks?
-    // YES. If data is chunked, the chunks contain ALL the large data.
-    // If we only pass `files`, the new chunks will only contain `files`. `originalFiles` will be lost.
-    
-    // Solution: We must load the current package to get originalFiles before saving if we assume they share the chunk storage.
-    // In our `saveLargeDoc` implementation above, we serialize `largeData`. 
-    // If we pass `{ files: ... }`, the JSON is just `{ files: ... }`.
-    // So yes, we need to merge with existing large data if we want to preserve other large fields.
-    
-    // For finalizePackageGeneration, we likely want to keep originalFiles.
+    // Get current package to preserve originalFiles if we need to re-save them
     const currentPkg = await getPackage(packageId); 
-    const originalFiles = currentPkg?.originalFiles || files; // fallback to new files if no original
+    const originalFiles = currentPkg?.originalFiles || files; 
 
     await saveLargeDoc(packageDocRef, {
         status: 'completed',
@@ -291,7 +282,7 @@ export const finalizePackageGeneration = async (
 
     // Create the initial checkpoint
     const checkpointsCollectionRef = getCheckpointsCollection(packageId);
-    const checkpointDocRef = doc(checkpointsCollectionRef); // Auto-generate ID
+    const checkpointDocRef = doc(checkpointsCollectionRef); 
     
     await saveLargeDoc(checkpointDocRef, {
         message: 'Initial Version',
@@ -371,22 +362,19 @@ export const deletePackage = async (packageId: string): Promise<void> => {
     // 2. Get all checkpoint documents to delete
     const checkpointsCollection = getCheckpointsCollection(packageId);
     const checkpointsSnapshot = await getDocs(checkpointsCollection);
-    // Note: If checkpoints are chunked, we should strictly delete their chunks too.
-    // However, deleting the parent document usually suffices for logical deletion, 
-    // but to save space we should delete subcollections. 
-    // Firestore batch delete doesn't automatically delete subcollections.
-    // Given the complexity of recursive delete in client SDK, we will delete the main checkpoint docs.
-    // For a production app, use a Cloud Function for recursive deletion.
     for (const cpDoc of checkpointsSnapshot.docs) {
         batch.delete(cpDoc.ref);
-        // Best effort: try to delete chunks if we know they exist, but queries inside loop are slow.
-        // We'll skip deep cleanup for this demo scope to avoid timeouts.
+        
+        // Also try to delete chunks for checkpoints if they exist
+        const chunksCol = collection(cpDoc.ref, 'data_chunks');
+        const chunksSnapshot = await getDocs(chunksCol);
+        chunksSnapshot.forEach(c => batch.delete(c.ref));
     }
     
-    // 3. Delete the main package document (and potentially its chunks subcollection items)
+    // 3. Delete the main package document (and its chunks subcollection items)
     const packageDocRef = doc(db, 'packages', packageId);
     
-    // Best effort cleanup for package chunks
+    // Cleanup for package chunks
     const packageChunksCol = collection(packageDocRef, 'data_chunks');
     const chunksSnapshot = await getDocs(packageChunksCol);
     chunksSnapshot.forEach(c => batch.delete(c.ref));
@@ -472,11 +460,6 @@ export const getCheckpoints = async (packageId: string): Promise<Checkpoint[]> =
     const querySnapshot = await getDocs(q);
     
     // We need to load chunks for each checkpoint if they are chunked.
-    // This could be slow if there are many checkpoints.
-    // Optimally, we only load files when a checkpoint is "viewed" or "reverted to".
-    // But the UI currently expects `files` to be present for diffing logic (though maybe only on demand).
-    
-    // Let's load them in parallel.
     const checkpoints = await Promise.all(querySnapshot.docs.map(async (docSnap) => {
         const fullData = await loadLargeDoc(docSnap);
         

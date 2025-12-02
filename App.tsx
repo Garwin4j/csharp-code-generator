@@ -1,6 +1,7 @@
 
+
 import React, { useState, useEffect } from 'react';
-import * as firebaseAuth from 'firebase/auth';
+import { User, onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
 import { auth, googleProvider } from './firebaseConfig';
 import { GeneratedFile, ChatMessage, Package, FilePatch, Checkpoint } from './types';
 import * as geminiService from './services/geminiService';
@@ -187,7 +188,7 @@ function generateCodeDiffSummary(oldFiles: GeneratedFile[], newFiles: GeneratedF
 
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>('loading');
-  const [user, setUser] = useState<firebaseAuth.User | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   
   const [packages, setPackages] = useState<Package[]>([]);
   const [selectedPackage, setSelectedPackage] = useState<Package | null>(null);
@@ -198,14 +199,13 @@ const App: React.FC = () => {
   const [generatedCode, setGeneratedCode] = useState<GeneratedFile[] | null>(null);
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [checkpointToRevert, setCheckpointToRevert] = useState<Checkpoint | null>(null);
-  // FIX: Initialize useState with a new Set instance
+  
   const [changedFilePaths, setChangedFilePaths] = useState<Set<string>>(new Set());
-  // FIX: Initialize useState with a new Map instance
   const [fileDiffs, setFileDiffs] = useState<Map<string, Set<number>>>(new Map());
   
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isGeneratingDocs, setIsGeneratingDocs] = useState<boolean>(false);
-  const [isGeneratingPatch, setIsGeneratingPatch] = useState<boolean>(false); // New state for patch generation
+  const [isGeneratingPatch, setIsGeneratingPatch] = useState<boolean>(false); 
   const [error, setError] = useState<string | null>(null);
   const [thinkingProgress, setThinkingProgress] = useState<string>('');
   const [isThinkingPanelOpen, setIsThinkingPanelOpen] = useState<boolean>(false);
@@ -216,15 +216,11 @@ const App: React.FC = () => {
 
   useEffect(() => {
     // This effect syncs the `selectedPackage` state with real-time updates from the `packages` list.
-    // This is crucial for updating the view after a background generation completes, ensuring
-    // the app uses the latest, sanitized data from Firestore and preventing circular reference errors.
     const syncPackage = async () => {
         if (!selectedPackage?.id) return;
 
         const updatedPackage = packages.find(p => p.id === selectedPackage.id);
 
-        // If an updated version is found in the main list (e.g., generation finished), sync the state.
-        // We use `updatedAt` to prevent infinite re-renders.
         if (updatedPackage && updatedPackage.updatedAt > selectedPackage.updatedAt) {
           
           // Check if the updated package is "large" (missing files in the list view due to chunking)
@@ -260,7 +256,7 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = firebaseAuth.onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setAppState('home');
       if (!currentUser) {
@@ -283,23 +279,20 @@ const App: React.FC = () => {
 
   const handleLogin = async () => {
     try {
-      await firebaseAuth.signInWithPopup(auth, googleProvider);
+      await signInWithPopup(auth, googleProvider);
       // onAuthStateChanged will handle the rest
     } catch (err) {
       console.error("Login failed:", err);
-      // You could set an error state here to show in the UI
     }
   };
 
   const handleLogout = async () => {
-    await firebaseAuth.signOut(auth);
+    await signOut(auth);
     setSelectedPackage(null);
     setGeneratedCode(null);
     setChatHistory([]);
     setPackages([]);
-    // FIX: Call setChangedFilePaths with a new Set instance
     setChangedFilePaths(new Set());
-    // FIX: Call setFileDiffs with a new Map instance
     setFileDiffs(new Map());
     setAppState('home');
   };
@@ -323,9 +316,7 @@ const App: React.FC = () => {
           const fullPkg: Package = { ...pkg, originalFiles: pkg.originalFiles || pkg.files };
           setSelectedPackage(fullPkg);
           setGeneratedCode(fullPkg.files);
-          // FIX: Call setChangedFilePaths with a new Set instance
-          setChangedFilePaths(new Set()); // Clear highlights on new selection
-          // FIX: Call setFileDiffs with a new Map instance
+          setChangedFilePaths(new Set()); 
           setFileDiffs(new Map());
           
           const history = await firestoreService.getPackageChatHistory(fullPkg.id);
@@ -349,13 +340,10 @@ const App: React.FC = () => {
     try {
         const pkg = await firestoreService.getPackage(key.trim());
         if (pkg) {
-            // Ensure originalFiles is always set when loading a package
             const fullPkg: Package = { ...pkg, originalFiles: pkg.originalFiles || pkg.files };
             setSelectedPackage(fullPkg);
             setGeneratedCode(fullPkg.files);
-            // FIX: Call setChangedFilePaths with a new Set instance
             setChangedFilePaths(new Set());
-            // FIX: Call setFileDiffs with a new Map instance
             setFileDiffs(new Map());
             const history = await firestoreService.getPackageChatHistory(fullPkg.id);
             setChatHistory(history);
@@ -378,9 +366,7 @@ const App: React.FC = () => {
     setGeneratedCode(null);
     setChatHistory([]);
     setCheckpoints([]);
-    // FIX: Call setChangedFilePaths with a new Set instance
     setChangedFilePaths(new Set());
-    // FIX: Call setFileDiffs with a new Map instance
     setFileDiffs(new Map());
     setRequirements(INITIAL_REQUIREMENTS);
     setAppState('generating');
@@ -391,9 +377,7 @@ const App: React.FC = () => {
     setGeneratedCode(null);
     setChatHistory([]);
     setCheckpoints([]);
-    // FIX: Call setChangedFilePaths with a new Set instance
     setChangedFilePaths(new Set());
-    // FIX: Call setFileDiffs with a new Map instance
     setFileDiffs(new Map());
     setAppState('home');
   };
@@ -402,23 +386,17 @@ const App: React.FC = () => {
     if (!requirements.trim()) return;
     setIsLoading(true);
     setError(null);
-    // FIX: Call setChangedFilePaths with a new Set instance
     setChangedFilePaths(new Set());
-    // FIX: Call setFileDiffs with a new Map instance
     setFileDiffs(new Map());
   
     try {
-      // Create package first, works for guests (user?.uid is undefined) and logged-in users
-      const newPackage = await firestoreService.createPackageForGeneration(requirements, user?.uid, baseFiles); // Pass baseFiles
+      const newPackage = await firestoreService.createPackageForGeneration(requirements, user?.uid, baseFiles); 
       setSelectedPackage(newPackage);
-      setAppState('chat'); // Go directly to chat/generation view
+      setAppState('chat'); 
   
-      // Fire-and-forget background generation
       geminiService.generateCode(newPackage.id, requirements, baseFiles);
   
     } catch (err) {
-      // FIX: Added explicit type annotation to `errorMessage` to resolve potential type inference issues
-      // with the `unknown` type in catch blocks, ensuring it's treated as a `string` when passed to `setError`.
       const errorMessage: string = err instanceof Error ? err.message : 'An unknown error occurred while starting generation.';
       setError(errorMessage);
       setAppState('generating');
@@ -440,25 +418,20 @@ const App: React.FC = () => {
 
         const newPackage = await firestoreService.createPackageFromJson(data, user?.uid);
         
-        // Ensure originalFiles is set for the selected package state
         const fullPkg: Package = { ...newPackage, originalFiles: newPackage.files };
         setSelectedPackage(fullPkg);
         setGeneratedCode(fullPkg.files);
-        // FIX: Call setChangedFilePaths with a new Set instance
         setChangedFilePaths(new Set()); 
-        // FIX: Call setFileDiffs with a new Map instance
         setFileDiffs(new Map());
-        setChatHistory([]); // New project from JSON has no chat history.
+        setChatHistory([]);
         const packageCheckpoints = await firestoreService.getCheckpoints(fullPkg.id);
         setCheckpoints(packageCheckpoints);
         setAppState('chat');
 
     } catch (err) {
-        // FIX: Added explicit type annotation to `errorMessage` to resolve potential type inference issues
-        // with the `unknown` type in catch blocks, ensuring it's treated as a `string` when passed to `setError`.
         const errorMessage: string = err instanceof Error ? err.message : 'Failed to parse or create project from JSON.';
         setError(errorMessage);
-        setAppState('generating'); // Stay on the same page to show error
+        setAppState('generating');
     } finally {
         setIsLoading(false);
     }
@@ -474,12 +447,9 @@ const App: React.FC = () => {
     setIsLoading(true);
     try {
       await firestoreService.deletePackage(packageToDelete.id);
-      // The onSnapshot listener will automatically refresh the package list.
     } catch (err) {
-      // FIX: Added explicit type annotation to `errorMessage` to resolve potential type inference issues
-      // with the `unknown` type in catch blocks, ensuring it's treated as a `string` when passed to `setError`.
       const errorMessage: string = err instanceof Error ? err.message : 'An unknown error occurred during deletion.';
-      setError(errorMessage); // This error could be shown in a toast/notification
+      setError(errorMessage); 
       console.error("Failed to delete package:", errorMessage);
     } finally {
       setIsLoading(false);
@@ -488,14 +458,10 @@ const App: React.FC = () => {
   };
 
   const handleRenamePackage = async (packageId: string, newName: string) => {
-    if (!newName.trim()) return; // Prevent renaming to an empty string
+    if (!newName.trim()) return;
     try {
       await firestoreService.renamePackage(packageId, newName);
-      // Firestore's onSnapshot listener will automatically update the local state.
     } catch (err) {
-      // FIX: The error "Argument of type 'unknown' is not assignable to parameter of type 'string'" 
-      // is addressed by explicitly typing `errorMessage` as `string` when derived from an `unknown` error object.
-      // This ensures type compatibility when `errorMessage` is passed to functions expecting a string.
       const errorMessage: string = err instanceof Error ? err.message : 'An unknown error occurred during rename.';
       setError(errorMessage);
       console.error("Failed to rename package:", errorMessage);
@@ -542,8 +508,6 @@ const App: React.FC = () => {
           setChatHistory(prev => [...prev, revertMessage]);
 
       } catch (err) {
-          // FIX: Added explicit type annotation to `errorMessage` to resolve potential type inference issues
-          // with the `unknown` type in catch blocks, ensuring it's treated as a `string` when passed to `setError`.
           const errorMessage: string = err instanceof Error ? err.message : 'An unknown error occurred during revert.';
           setError(errorMessage);
           const errorModelMessage: ChatMessage = { role: 'model', content: `I encountered an error trying to revert: ${errorMessage}`, timestamp: new Date(), images: [] };
@@ -566,19 +530,17 @@ const App: React.FC = () => {
     setError(null);
     setThinkingProgress('');
     setIsThinkingPanelOpen(true);
-    // FIX: Call setFileDiffs with a new Map instance
-    setFileDiffs(new Map()); // Clear previous diffs
+    setFileDiffs(new Map()); 
 
     try {
       await firestoreService.createCheckpoint(selectedPackage.id, message || 'Image-based change', generatedCode);
       const updatedCheckpoints = await firestoreService.getCheckpoints(selectedPackage.id);
       setCheckpoints(updatedCheckpoints);
       
-      const oldCode = [...generatedCode]; // Capture old state for diffing
+      const oldCode = [...generatedCode]; 
       const patch = await geminiService.refineCode(message, generatedCode, setThinkingProgress, images);
       const updatedCode = applyCodePatch(generatedCode, patch);
 
-      // Calculate diffs for changed files
       const newDiffs = new Map<string, Set<number>>();
       patch.forEach(p => {
           if (p.op === 'add' || p.op === 'update') {
@@ -597,7 +559,6 @@ const App: React.FC = () => {
       
       setGeneratedCode(updatedCode);
       setSelectedPackage(prev => prev ? { ...prev, files: updatedCode, updatedAt: new Date() } : null);
-      // FIX: Call setChangedFilePaths with a new Set instance
       setChangedFilePaths(new Set(patch.map(p => p.path)));
 
       const modelMessage: ChatMessage = { role: 'model', content: "Done! I've updated the code based on your request. Take a look at the changes.", timestamp: new Date(), images: [] };
@@ -605,12 +566,9 @@ const App: React.FC = () => {
       setChatHistory([...newHistory, modelMessage]);
 
     } catch (err) {
-      // FIX: Added explicit type annotation to `errorMessage` to resolve potential type inference issues
-      // with the `unknown` type in catch blocks, ensuring it's treated as a `string` when passed to `setError`.
       const errorMessage: string = err instanceof Error ? err.message : 'An unknown error occurred.';
       setError(errorMessage);
-      // FIX: Call setChangedFilePaths with a new Set instance
-      setChangedFilePaths(new Set()); // Clear highlights on error
+      setChangedFilePaths(new Set());
       const errorModelMessage: ChatMessage = { role: 'model', content: `I encountered an error trying to process that: ${errorMessage}`, timestamp: new Date(), images: [] };
       await firestoreService.addChatMessage(selectedPackage.id, errorModelMessage);
       setChatHistory([...newHistory, errorModelMessage]);
@@ -620,31 +578,32 @@ const App: React.FC = () => {
   };
   
   const handleDownloadDetailedDocs = async () => {
-    if (!selectedPackage?.files || isGeneratingDocs) return;
+    if (!selectedPackage || !selectedPackage.files || isGeneratingDocs) return;
+
+    // Explicitly narrowing and typing to avoid TS errors
+    const pkgName: string = selectedPackage.name;
+    const pkgFiles: GeneratedFile[] = selectedPackage.files;
 
     setIsGeneratingDocs(true);
     setError(null);
 
     try {
         const markdownContent = await geminiService.generateDetailedDocumentation(
-            selectedPackage.name,
-            selectedPackage.files,
+            pkgName,
+            pkgFiles,
         );
         const blob = new Blob([markdownContent], { type: 'text/markdown;charset=utf-8' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        const projectName = selectedPackage.name.replace(/[^a-zA-Z0-9-]/g, '_').replace(/_+/g, '_');
+        const projectName = pkgName.replace(/[^a-zA-Z0-9-]/g, '_').replace(/_+/g, '_');
         link.download = `${projectName}_Detailed_Docs.md`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(link.href);
     } catch (err) {
-        // FIX: Added explicit type annotation to `errorMessage` to resolve potential type inference issues
-        // with the `unknown` type in catch blocks, ensuring it's treated as a `string` when passed to `setError`.
         const errorMessage: string = err instanceof Error ? err.message : 'Failed to generate detailed documentation.';
         setError(errorMessage);
-        // This error will be displayed in the CodeOutput panel
     } finally {
         setIsGeneratingDocs(false);
     }
@@ -693,17 +652,14 @@ const App: React.FC = () => {
   const handleSaveFile = async (path: string, content: string) => {
     if (!generatedCode || !selectedPackage) return;
 
-    const originalCode = [...generatedCode]; // Keep a copy in case of failure
+    const originalCode = [...generatedCode];
     const updatedCode = generatedCode.map(f =>
         f.path === path ? { ...f, content } : f
     );
     
-    // Optimistically update UI
     setGeneratedCode(updatedCode);
     setSelectedPackage(prev => prev ? { ...prev, files: updatedCode, updatedAt: new Date() } : null);
-    // FIX: Call setChangedFilePaths with a new Set instance based on previous state
     setChangedFilePaths(prev => new Set(prev).add(path));
-    // A user edit clears the AI-generated diff highlighting for that file
     setFileDiffs(prev => {
         const newDiffs = new Map(prev);
         if (newDiffs.has(path)) {
@@ -716,11 +672,8 @@ const App: React.FC = () => {
     try {
         await firestoreService.updatePackage(selectedPackage.id, updatedCode);
     } catch (err) {
-        // FIX: Added explicit type annotation to `errorMessage` to resolve potential type inference issues
-        // with the `unknown` type in catch blocks, ensuring it's treated as a `string` when passed to `setError`.
         const errorMessage: string = err instanceof Error ? err.message : 'An unknown error occurred.';
         setError(`Failed to save file "${path}": ${errorMessage}`);
-        // Revert UI on failure
         setGeneratedCode(originalCode);
         setSelectedPackage(prev => prev ? { ...prev, files: originalCode } : null);
     }
@@ -783,8 +736,8 @@ const App: React.FC = () => {
             changedFilePaths={changedFilePaths}
             onSaveFile={handleSaveFile}
             fileDiffs={fileDiffs}
-            onDownloadGitPatch={handleDownloadGitPatch} // Pass the new handler
-            isGeneratingPatch={isGeneratingPatch} // Pass loading state
+            onDownloadGitPatch={handleDownloadGitPatch}
+            isGeneratingPatch={isGeneratingPatch}
           />
         );
 
