@@ -606,16 +606,17 @@ const App: React.FC = () => {
     }
   };
 
-  const handleDownloadGitPatch = async () => {
-    if (!selectedPackage?.originalFiles || !generatedCode || !selectedPackage?.name || isGeneratingPatch) return;
+  const handleDownloadPatch = async (baseFiles: GeneratedFile[], fileSuffix: string) => {
+    if (!generatedCode || !selectedPackage?.name || isGeneratingPatch) return;
 
     setIsGeneratingPatch(true);
     setError(null);
 
     try {
-        const patchContent = generateCodeDiffSummary(selectedPackage.originalFiles, generatedCode);
+        const patchContent = generateCodeDiffSummary(baseFiles, generatedCode);
         if (!patchContent.trim()) {
-            alert("No changes detected since project inception to generate a patch.");
+            alert("No changes detected between the selected version and the current code.");
+            setIsGeneratingPatch(false); 
             return;
         }
 
@@ -630,7 +631,10 @@ const App: React.FC = () => {
         const day = String(today.getDate()).padStart(2, '0');
         const dateString = `${year}-${month}-${day}`;
 
-        link.download = `${projectName}_changes_${dateString}.patch`;
+        // Sanitize file suffix
+        const safeSuffix = fileSuffix.replace(/[^a-zA-Z0-9-]/g, '_');
+
+        link.download = `${projectName}_${safeSuffix}_${dateString}.patch`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -643,7 +647,7 @@ const App: React.FC = () => {
     } finally {
         setIsGeneratingPatch(false);
     }
-};
+  };
 
 
   const handleSaveFile = async (path: string, content: string) => {
@@ -733,7 +737,7 @@ const App: React.FC = () => {
             changedFilePaths={changedFilePaths}
             onSaveFile={handleSaveFile}
             fileDiffs={fileDiffs}
-            onDownloadGitPatch={handleDownloadGitPatch}
+            onDownloadPatch={handleDownloadPatch}
             isGeneratingPatch={isGeneratingPatch}
           />
         );

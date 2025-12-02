@@ -1,9 +1,9 @@
 
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GeneratedFile, Package, Checkpoint } from '../types';
 import FileTree from './FileTree';
 import CodeViewer from './CodeViewer';
+import CheckpointSelectModal from './CheckpointSelectModal';
 import JSZip from 'jszip';
 
 interface CodeOutputProps {
@@ -15,8 +15,8 @@ interface CodeOutputProps {
   changedFilePaths: Set<string>;
   onSaveFile: (path: string, newContent: string) => Promise<void>;
   fileDiffs: Map<string, Set<number>>;
-  onDownloadGitPatch: () => Promise<void>; // New prop for patch download
-  isGeneratingPatch: boolean; // New prop for patch loading state
+  onDownloadPatch: (baseFiles: GeneratedFile[], fileSuffix: string) => Promise<void>;
+  isGeneratingPatch: boolean;
 }
 
 const CollapseIcon = ({ isCollapsed }: { isCollapsed: boolean }) => (
@@ -30,10 +30,14 @@ const CollapseIcon = ({ isCollapsed }: { isCollapsed: boolean }) => (
 );
 
 
-const CodeOutput: React.FC<CodeOutputProps> = ({ selectedPackage, checkpoints, generatedCode, isLoading, error, changedFilePaths, onSaveFile, fileDiffs, onDownloadGitPatch, isGeneratingPatch }) => {
+const CodeOutput: React.FC<CodeOutputProps> = ({ selectedPackage, checkpoints, generatedCode, isLoading, error, changedFilePaths, onSaveFile, fileDiffs, onDownloadPatch, isGeneratingPatch }) => {
   const [selectedFile, setSelectedFile] = useState<GeneratedFile | null>(null);
   const [isFileTreeCollapsed, setIsFileTreeCollapsed] = useState(false);
   const [fileTreeWidth, setFileTreeWidth] = useState(300);
+  
+  const [showPatchMenu, setShowPatchMenu] = useState(false);
+  const [showCheckpointModal, setShowCheckpointModal] = useState(false);
+  const patchMenuRef = useRef<HTMLDivElement>(null);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const isResizingRef = useRef(false);
@@ -50,6 +54,16 @@ const CodeOutput: React.FC<CodeOutputProps> = ({ selectedPackage, checkpoints, g
       setSelectedFile(null);
     }
   }, [generatedCode]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+        if (patchMenuRef.current && !patchMenuRef.current.contains(event.target as Node)) {
+            setShowPatchMenu(false);
+        }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const mouseMoveHandler = useCallback((e: MouseEvent) => {
     if (!isResizingRef.current || !containerRef.current) return;
@@ -155,6 +169,26 @@ const CodeOutput: React.FC<CodeOutputProps> = ({ selectedPackage, checkpoints, g
     URL.revokeObjectURL(link.href);
   };
 
+  const handlePatchFullProject = () => {
+      if (selectedPackage?.originalFiles) {
+          onDownloadPatch(selectedPackage.originalFiles, 'changes_since_creation');
+      }
+      setShowPatchMenu(false);
+  };
+
+  const handlePatchFromLastCheckpoint = () => {
+      if (checkpoints && checkpoints.length > 0) {
+          // checkpoints[0] is the most recent checkpoint
+          onDownloadPatch(checkpoints[0].files, 'changes_since_last_checkpoint');
+      }
+      setShowPatchMenu(false);
+  };
+
+  const handleSelectCheckpoint = (checkpoint: Checkpoint) => {
+      setShowCheckpointModal(false);
+      onDownloadPatch(checkpoint.files, `changes_since_checkpoint`);
+  };
+
   const renderContent = () => {
     if (isLoading) {
       return (
@@ -221,14 +255,11 @@ const CodeOutput: React.FC<CodeOutputProps> = ({ selectedPackage, checkpoints, g
     );
   };
 
-  const hasChangesForPatch = 
-    selectedPackage?.originalFiles && 
-    generatedCode && 
-    JSON.stringify(selectedPackage.originalFiles) !== JSON.stringify(generatedCode);
+  const hasAnyContent = generatedCode && generatedCode.length > 0;
 
   return (
-    <div className="flex flex-col bg-gray-800 overflow-hidden h-full">
-       <div className="flex justify-between items-center p-4 border-b border-gray-700">
+    <div className="flex flex-col bg-gray-800 overflow-hidden h-full relative">
+       <div className="flex justify-between items-center p-4 border-b border-gray-700 z-10">
         <div className="flex items-center gap-3">
             <button
                 onClick={() => setIsFileTreeCollapsed(!isFileTreeCollapsed)}
@@ -243,32 +274,65 @@ const CodeOutput: React.FC<CodeOutputProps> = ({ selectedPackage, checkpoints, g
             </div>
         </div>
         <div className="flex items-center gap-2">
-            <button
-                onClick={onDownloadGitPatch}
-                disabled={!generatedCode || !selectedPackage?.originalFiles || generatedCode.length === 0 || isLoading || isGeneratingPatch || !hasChangesForPatch}
-                className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-700/50 disabled:cursor-not-allowed disabled:text-gray-500 text-gray-200 font-semibold py-2 px-4 rounded-md transition-colors"
-                title="Download Git-style patch of changes from initial project state"
-            >
-                {isGeneratingPatch ? (
-                    <>
-                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        <span>Patching...</span>
-                    </>
-                ) : (
-                    <>
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 002-2h2a2 2 0 002 2" />
-                        </svg>
-                        Git Patch
-                    </>
+            
+            {/* Patch Dropdown */}
+            <div className="relative" ref={patchMenuRef}>
+                 <button
+                    onClick={() => setShowPatchMenu(!showPatchMenu)}
+                    disabled={!hasAnyContent || isLoading || isGeneratingPatch}
+                    className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-700/50 disabled:cursor-not-allowed disabled:text-gray-500 text-gray-200 font-semibold py-2 px-4 rounded-md transition-colors"
+                    title="Generate patches between different versions"
+                >
+                    {isGeneratingPatch ? (
+                        <>
+                            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span>Patching...</span>
+                        </>
+                    ) : (
+                        <>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 002-2h2a2 2 0 002 2" />
+                            </svg>
+                            Patches ▼
+                        </>
+                    )}
+                </button>
+                {showPatchMenu && (
+                    <div className="absolute right-0 mt-2 w-64 bg-gray-800 rounded-md shadow-lg border border-gray-600 z-50 overflow-hidden">
+                        <button
+                            onClick={handlePatchFullProject}
+                            disabled={!selectedPackage?.originalFiles}
+                            className="block w-full text-left px-4 py-3 text-sm text-gray-200 hover:bg-gray-700 hover:text-white disabled:text-gray-500 disabled:cursor-not-allowed border-b border-gray-700"
+                        >
+                            <span className="font-semibold block">Full Project Patch</span>
+                            <span className="text-xs text-gray-400">Creation vs Current</span>
+                        </button>
+                         <button
+                            onClick={handlePatchFromLastCheckpoint}
+                            disabled={!checkpoints || checkpoints.length === 0}
+                            className="block w-full text-left px-4 py-3 text-sm text-gray-200 hover:bg-gray-700 hover:text-white disabled:text-gray-500 disabled:cursor-not-allowed border-b border-gray-700"
+                        >
+                            <span className="font-semibold block">Since Last Checkpoint</span>
+                             <span className="text-xs text-gray-400">Last AI interaction vs Current</span>
+                        </button>
+                         <button
+                            onClick={() => { setShowCheckpointModal(true); setShowPatchMenu(false); }}
+                            disabled={!checkpoints || checkpoints.length === 0}
+                            className="block w-full text-left px-4 py-3 text-sm text-gray-200 hover:bg-gray-700 hover:text-white disabled:text-gray-500 disabled:cursor-not-allowed"
+                        >
+                            <span className="font-semibold block">From Checkpoint...</span>
+                            <span className="text-xs text-gray-400">Select specific version vs Current</span>
+                        </button>
+                    </div>
                 )}
-            </button>
+            </div>
+
             <button
                 onClick={handleDownloadJson}
-                disabled={!generatedCode || generatedCode.length === 0 || isLoading}
+                disabled={!hasAnyContent || isLoading}
                 className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-700/50 disabled:cursor-not-allowed disabled:text-gray-500 text-gray-200 font-semibold py-2 px-4 rounded-md transition-colors"
                 title="Download project state as a JSON file"
             >
@@ -279,7 +343,7 @@ const CodeOutput: React.FC<CodeOutputProps> = ({ selectedPackage, checkpoints, g
             </button>
             <button
             onClick={handleDownloadZip}
-            disabled={!generatedCode || generatedCode.length === 0 || isLoading}
+            disabled={!hasAnyContent || isLoading}
             className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-700/50 disabled:cursor-not-allowed disabled:text-gray-500 text-gray-200 font-semibold py-2 px-4 rounded-md transition-colors"
             >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -292,6 +356,13 @@ const CodeOutput: React.FC<CodeOutputProps> = ({ selectedPackage, checkpoints, g
       <div className="flex-grow overflow-hidden min-h-0">
         {renderContent()}
       </div>
+
+      <CheckpointSelectModal 
+        isOpen={showCheckpointModal}
+        onClose={() => setShowCheckpointModal(false)}
+        checkpoints={checkpoints}
+        onSelect={handleSelectCheckpoint}
+      />
     </div>
   );
 };
