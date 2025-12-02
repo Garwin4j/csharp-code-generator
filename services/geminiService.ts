@@ -251,7 +251,7 @@ export async function generateCode(
   try {
     const fullJsonResponse = await makeGeminiRequestWithRetry(
       () => ai.models.generateContentStream({
-          model: "gemini-2.5-flash",
+          model: "gemini-3-pro-preview",
           contents: prompt,
           config: {
               responseMimeType: "application/json",
@@ -356,7 +356,7 @@ export async function refineCode(
     try {
         const fullJsonResponse = await makeGeminiRequestWithRetry(
             () => ai.models.generateContentStream({
-                model: "gemini-2.5-flash",
+                model: "gemini-3-pro-preview",
                 contents: contents,
                 config: {
                     responseMimeType: "application/json",
@@ -410,7 +410,7 @@ export async function consolidateRequirements(
 
     try {
         const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: "gemini-3-pro-preview",
             contents: prompt,
         });
         return response.text;
@@ -455,7 +455,7 @@ export async function generateDetailedDocumentation(
 
     try {
         const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: "gemini-3-pro-preview",
             contents: prompt,
         });
         return response.text;
